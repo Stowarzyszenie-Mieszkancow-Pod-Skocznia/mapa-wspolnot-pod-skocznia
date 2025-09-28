@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+</head>
+<body>
+    <h1>Mapa Pod Skocznią</h1>
+    <div id="map" style="height: 1000px;"></div>
+    <script>
+      let map = L.map('map').setView([52.18401, 21.03792], 16);
+
+      let wspolnoty = [
+        {
+          name: 'Green Mokotów',
+          geoJSON: {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "properties": {
+                  "name": "Green Mokotów",
+                  "management": "LemmonHouse",
+                  "managementEmail": "biuro@lemmonhouse.pl",
+                  "associationContact": "Michał Jarosz"
+                },
+                "geometry": {
+                  "coordinates": [
+                    [
+                      [
+                        21.041100105343247,
+                        52.17803018627916
+                      ],
+                      [
+                        21.04162373677036,
+                        52.177579083238584
+                      ],
+                      [
+                        21.042497307248425,
+                        52.17753679209386
+                      ],
+                      [
+                        21.04259947923481,
+                        52.17835441376391
+                      ],
+                      [
+                        21.04183063504209,
+                        52.17837320948766
+                      ],
+                      [
+                        21.041100105343247,
+                        52.17803018627916
+                      ]
+                    ]
+                  ],
+                  "type": "Polygon"
+                }
+              },
+              {
+                "type": "Feature",
+                "properties": {
+                  "name": "Green Mokotów"
+                },
+                "geometry": {
+                  "coordinates": [
+                    [
+                      [
+                        21.042594370635697,
+                        52.177539924772816
+                      ],
+                      [
+                        21.043733711346164,
+                        52.177486058770484
+                      ],
+                      [
+                        21.043927834750548,
+                        52.17921254888918
+                      ],
+                      [
+                        21.042975082803395,
+                        52.179807734012456
+                      ],
+                      [
+                        21.042285421899464,
+                        52.179505444908756
+                      ],
+                      [
+                        21.042780956029873,
+                        52.17909664653226
+                      ],
+                      [
+                        21.042594370635697,
+                        52.177539924772816
+                      ]
+                    ]
+                  ],
+                  "type": "Polygon"
+                }
+              }
+            ]
+          }
+        },
+        {
+          name: 'Green Mokotów I',
+          geoJSON: {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "properties": {
+                  "name": "Green Mokotów I",
+                },
+                "geometry": {
+                  "coordinates": [
+                    [
+                      [
+                        21.041540904188167,
+                        52.17738779555327
+                      ],
+                      [
+                        21.04106325015519,
+                        52.17648713824309
+                      ],
+                      [
+                        21.04214627320414,
+                        52.17622555261528
+                      ],
+                      [
+                        21.04242724616452,
+                        52.177016570314834
+                      ],
+                      [
+                        21.042475777858755,
+                        52.177350203265036
+                      ],
+                      [
+                        21.041540904188167,
+                        52.17738779555327
+                      ]
+                    ]
+                  ],
+                  "type": "Polygon"
+                }
+              }
+            ]
+          }
+        },
+        {
+          name: 'Green Mokotów II',
+          geoJSON: {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "properties": {
+                  "name": "Green Mokotów II",
+                },
+                "geometry": {
+                  "coordinates": [
+                    [
+                      [
+                        21.042599509086017,
+                        52.17733418685751
+                      ],
+                      [
+                        21.042552507576005,
+                        52.17698523074853
+                      ],
+                      [
+                        21.043605004760536,
+                        52.17676906186665
+                      ],
+                      [
+                        21.043668792509607,
+                        52.17728271857487
+                      ],
+                      [
+                        21.042599509086017,
+                        52.17733418685751
+                      ]
+                    ]
+                  ],
+                  "type": "Polygon"
+                }
+              }
+            ]
+          }
+        }
+      ]
+
+
+
+
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      }).addTo(map);
+
+      let wspolnotyLayer = L.geoJSON(undefined, {
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties || {};
+          const rows = Object.entries(props).map(
+            ([k, v]) => `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td>${v}</td></tr>`
+          ).join("");
+
+          const html = rows
+            ? `<table>${rows}</table>`
+            : "No properties";
+
+          layer.bindPopup(html);
+          // (bindPopup automatically opens on click; no extra click handler needed)
+        }
+      })
+        .addTo(map);
+
+
+      wspolnoty.forEach(wspolnota => {
+        wspolnotyLayer.addData(wspolnota.geoJSON);
+      })
+
+
+
+      // L.tileLayer.wms("https://mapy.geoportal2.pl/map/wms/wms.php", {
+      //   layers: 'ORTOFOTOMAPA',
+      //   format: 'image/png',
+      //   transparent: true,
+      //   attribution: '© GUGiK'
+      // }).addTo(map);
+
+    </script>
+</body>
+</html>
