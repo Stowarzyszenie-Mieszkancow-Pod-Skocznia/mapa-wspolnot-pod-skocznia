@@ -49,6 +49,11 @@ const wspolnotyData = [
     budynki: "Pory 53",
   },
   {
+    name: "Vena Mokotów",
+    budynki: "Pory 55, Pory 55A, Pory 57",
+    przedstawicielWStowarzyszeniu: false
+  },
+  {
     name: "Wille Bergamotki",
     administrator: "Royal House",
     budynki: "Eukaliptusowa 1, Eukaliptusowa 3, Eukaliptusowa 5",
@@ -565,6 +570,61 @@ const wspolnotyGeoJSON = [
                 [
                   21.04325741529465,
                   52.18278700064045
+                ]
+              ]
+            ],
+            "type": "Polygon"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "Vena Mokotów",
+    "geoJSON": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "coordinates": [
+              [
+                [
+                  21.043153971729367,
+                  52.18317843367993
+                ],
+                [
+                  21.044439073337827,
+                  52.18330155006066
+                ],
+                [
+                  21.04431608509867,
+                  52.183743227272174
+                ],
+                [
+                  21.04431608509867,
+                  52.18378631749704
+                ],
+                [
+                  21.044273415709114,
+                  52.18393867188547
+                ],
+                [
+                  21.04299082406493,
+                  52.183821713007575
+                ],
+                [
+                  21.04302345359764,
+                  52.18368474761468
+                ],
+                [
+                  21.043051063202967,
+                  52.183629345762796
+                ],
+                [
+                  21.043153971729367,
+                  52.18317843367993
                 ]
               ]
             ],
