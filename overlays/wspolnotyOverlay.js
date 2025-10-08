@@ -2,7 +2,7 @@ import {wspolnotyGeoJSON} from "./data/wspolnotyGeoJSON.js";
 import {wspolnotyData} from "./data/wspolnoty.js";
 
 const wspolnotyOverlayData = wspolnotyGeoJSON.features.map(feature => {
-  feature.properties = wspolnotyData.find(({name}) => name === feature.properties.wspolnota) || {name: feature.properties.wspolnotagit}
+  feature.properties = {...feature.properties, ...wspolnotyData.find(({wspolnota}) => wspolnota === feature.properties.wspolnota)}
   return feature
 })
 
