@@ -10,7 +10,16 @@ const wspolnotyOverlay = L.geoJSON(undefined, {
   onEachFeature: (feature, layer) => {
     const props = feature.properties || {};
     const rows = Object.entries(props).map(
-      ([k, v]) => `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td>${v}</td></tr>`
+      ([k, v]) => {
+        switch (k) {
+          case "fid":
+            return
+          case "www":
+            return v ? `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td><a href="${v}" target="_blank">${v}</a></td></tr>` : ''
+          default:
+            return v ? `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td>${v}</td></tr>` : ''
+        }
+      }
     ).join("");
 
     const html = rows
