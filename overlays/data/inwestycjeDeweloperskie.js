@@ -1,5 +1,5 @@
-const wspolnotyData = [
+const inwestycjeDeweloperskieData = [
 
 ]
 
-export {wspolnotyData}
+export {inwestycjeDeweloperskieData}
