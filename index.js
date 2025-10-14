@@ -10,6 +10,10 @@ import {
   gugikOverlays,
 } from "./overlays/gugikOverlays.js"
 
+import {
+  kimpOverlays,
+} from "./overlays/kimpOverlays.js"
+
 const initialZoom = 16
 const initialCenter = [52.18401, 21.03792]
 const maxBounds = [[52.19654,21.01968],[52.17150,21.05232]]
@@ -56,7 +60,8 @@ const overlays = {
   "Wspólnoty": wspolnotyOverlay,
   "Inwestycje deweloperskie": inwestycjeDeweloperskieOverlay,
   "Infrastruktura rowerowa (CyclOSM)": cyclosmOverlay,
-  ...gugikOverlays
+  ...gugikOverlays,
+  ...kimpOverlays
 }
 
 L.control.layers(layers,overlays).addTo(map)
