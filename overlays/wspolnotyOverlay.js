@@ -16,6 +16,8 @@ const wspolnotyOverlay = L.geoJSON(undefined, {
             return
           case "www":
             return v ? `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td><a href="${v}" target="_blank">${v}</a></td></tr>` : ''
+          case "regon":
+            return v ? `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td><a href="https://www.owg.pl/wyszukiwarka-regon/${v}" target="_blank">${v}</a></td></tr>` : ''
           default:
             return v ? `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td>${v}</td></tr>` : ''
         }
