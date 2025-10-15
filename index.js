@@ -7,6 +7,10 @@ import {
 } from "./overlays/inwestycjeDeweloperskieOverlay.js";
 
 import {
+  zielenOverlay
+} from "./overlays/zielenOverlay.js";
+
+import {
   gugikOverlays,
 } from "./overlays/gugikOverlays.js"
 
@@ -63,6 +67,7 @@ const layers = {
 const overlays = {
   "Wspólnoty": wspolnotyOverlay,
   "Inwestycje deweloperskie": inwestycjeDeweloperskieOverlay,
+  "Zieleń": zielenOverlay,
   "Infrastruktura rowerowa (CyclOSM)": cyclosmOverlay,
   ...gugikOverlays,
   ...kimpOverlays,
@@ -75,6 +80,7 @@ L.control.scale({imperial: false, maxWidth: 200}).addTo(map)
 osmLayer.addTo(map)
 wspolnotyOverlay.addTo(map)
 inwestycjeDeweloperskieOverlay.addTo(map)
+zielenOverlay.addTo(map)
 
 async function copyText(text) {
   try {
