@@ -23,10 +23,21 @@ const zielenOverlay = L.geoJSON(undefined, {
     layer.bindPopup(html);
   },
   style: feature => {
+    const color = ({fid, wlasnosc, stan, wlasciciel}) => {
+      if (fid === 12) return '#a30000'
+      if (wlasnosc === 'miejska' && stan === 'urządzone') return '#0a722c'
+      if (wlasnosc === 'miejska' && stan === 'nieurządzone') return '#d88812'
+      if (wlasnosc === 'prywatna' && stan === 'urządzone') return '#0a1372'
+      if (wlasnosc === 'prywatna' && wlasciciel === 'nieznany') return '#b5b83b'
+
+      return '#000'
+    }
+
     const style = {
       weight: 2,
-      color: '#0a722c',
-      fillColor: '#0a722c',
+      fillOpacity: 0.5,
+      color: color(feature.properties),
+      fillColor: color(feature.properties),
     }
 
     return style

@@ -80,7 +80,6 @@ L.control.scale({imperial: false, maxWidth: 200}).addTo(map)
 osmLayer.addTo(map)
 wspolnotyOverlay.addTo(map)
 inwestycjeDeweloperskieOverlay.addTo(map)
-zielenOverlay.addTo(map)
 
 async function copyText(text) {
   try {
