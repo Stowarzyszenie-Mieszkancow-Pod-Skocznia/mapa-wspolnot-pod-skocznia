@@ -1,6 +1,13 @@
 import {zielenGeoJSON} from "./data/zielenGeoJSON.js";
+import {zielenData} from "./data/zielen.js";
 
-const zielenOverlayData = zielenGeoJSON.features
+const zielenOverlayData = zielenGeoJSON.features.map(feature => {
+  feature.properties = {...feature.properties, ...zielenData[feature.properties.fid]}
+
+  return feature
+});
+
+
 
 const zielenOverlay = L.geoJSON(undefined, {
   onEachFeature: (feature, layer) => {
@@ -8,8 +15,7 @@ const zielenOverlay = L.geoJSON(undefined, {
     const rows = Object.entries(props).map(
       ([k, v]) => {
         switch (k) {
-          case "fid":
-            return
+
           default:
             return v ? `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td>${v}</td></tr>` : ''
         }
