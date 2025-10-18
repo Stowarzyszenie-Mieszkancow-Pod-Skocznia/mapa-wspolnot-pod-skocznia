@@ -1,6 +1,6 @@
 const zielenData = {
   5: {
-    komentarz: "Przykładowy komentarz dla Enklawy"
+    komentarz: "Jak dotąd jedyny park przejęty przez miasto"
   }
 }
 
