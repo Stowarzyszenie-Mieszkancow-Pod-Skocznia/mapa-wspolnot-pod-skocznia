@@ -1,5 +1,6 @@
 import {zielenGeoJSON} from "./data/zielenGeoJSON.js";
 import {zielenData} from "./data/zielen.js";
+import {MAP_CONFIG} from "../../config/mapConfig.js";
 
 const zielenOverlayData = zielenGeoJSON.features.map(feature => {
   feature.properties = {...feature.properties, ...zielenData[feature.properties.fid]}
@@ -7,11 +8,10 @@ const zielenOverlayData = zielenGeoJSON.features.map(feature => {
   return feature
 });
 
-
-
 const zielenOverlay = L.geoJSON(undefined, {
+  attribution: MAP_CONFIG.ATTRIBUTION,
   onEachFeature: (feature, layer) => {
-    const props = feature.properties || {};
+    const props = feature.properties || {}
     const rows = Object.entries(props).map(
       ([k, v]) => {
         switch (k) {
@@ -20,13 +20,13 @@ const zielenOverlay = L.geoJSON(undefined, {
             return v ? `<tr><th style="text-align:left;padding-right:8px;">${k}</th><td>${v}</td></tr>` : ''
         }
       }
-    ).join("");
+    ).join("")
 
     const html = rows
       ? `<table>${rows}</table>`
-      : "No properties";
+      : "No properties"
 
-    layer.bindPopup(html);
+    layer.bindPopup(html)
   },
   style: feature => {
     const color = ({fid, wlasnosc, stan, wlasciciel}) => {

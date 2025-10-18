@@ -1,7 +1,9 @@
+import {MAP_CONFIG} from "../../config/mapConfig.js";
+
 const overlayTemplate = {
   attribution: '&copy; <a href="https://www.gov.pl/web/gugik">Główny Urząd Geodezji i Kartografii</a>',
   format: "image/png",
-  maxZoom: 19,
+  maxZoom: MAP_CONFIG.MAX_ZOOM,
   transparent: "true",
 }
 
