@@ -29,4 +29,52 @@ const zielenOverlay = createGeoJSONOverlay({
   }
 });
 
-export { zielenOverlay };
+const DEFAULT_LEGEND_CONFIG = {
+  type: 'rectangle',
+  weight: 2,
+  fillOpacity: 0.5,
+}
+const zielenLegend = L.control.Legend({
+  position: 'bottomright',
+  title: 'Zieleń - Legenda',
+  legends: [
+    {
+      ...DEFAULT_LEGEND_CONFIG,
+      label: 'Zagospodarowane posesje prywatne',
+      color: '#a30000',
+      fillColor: '#a30000',
+    },
+    {
+      ...DEFAULT_LEGEND_CONFIG,
+      label: 'Parki urządzone i przejęte przez miasto',
+      color: '#0a722c',
+      fillColor: '#0a722c',
+    },
+    {
+      ...DEFAULT_LEGEND_CONFIG,
+      label: 'Działki miejskie niezagospodarowane',
+      color: '#d88812',
+      fillColor: '#d88812',
+    },
+    {
+      ...DEFAULT_LEGEND_CONFIG,
+      label: 'Parki urządzone pozostające w rękach prywatnych',
+      color: '#0a1372',
+      fillColor: '#0a1372',
+    },
+    {
+      ...DEFAULT_LEGEND_CONFIG,
+      label: 'Działki w rękach prywatnych niezagospodarowane',
+      color: '#7617c3',
+      fillColor: '#7617c3',
+    },
+    {
+      ...DEFAULT_LEGEND_CONFIG,
+      label: 'Pozostałe',
+      color: '#000',
+      fillColor: '#000',
+    },
+  ]
+})
+
+export { zielenOverlay, zielenLegend };
