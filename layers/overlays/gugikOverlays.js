@@ -25,7 +25,7 @@ const createLayerConfig = (layers, options) => {
 const kiegLayers = {
   'Budynki': 'budynki',
   'Działki': 'dzialki',
-  'Numery działek': 'numeryDzialek',
+  'Numery działek': 'numery_dzialek',
 }
 
 const kimpLayers = {
