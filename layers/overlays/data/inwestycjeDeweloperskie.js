@@ -1,5 +1,3 @@
-const inwestycjeDeweloperskieData = [
-
-]
+const inwestycjeDeweloperskieData = {}
 
 export {inwestycjeDeweloperskieData}

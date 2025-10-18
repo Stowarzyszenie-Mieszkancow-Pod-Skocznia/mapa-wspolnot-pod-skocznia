@@ -1,5 +1,5 @@
-const wspolnotyData = [
+const wspolnotyData = {
 
-]
+}
 
 export {wspolnotyData}
