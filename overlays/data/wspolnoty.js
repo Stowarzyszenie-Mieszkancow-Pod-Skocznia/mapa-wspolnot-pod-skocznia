@@ -1,5 +1,0 @@
-const wspolnotyData = [
-
-]
-
-export {wspolnotyData}
