@@ -1,6 +1,6 @@
 
 import { inwestycjeDeweloperskieGeoJSON } from './data/inwestycjeDeweloperskieGeoJSON.js';
-import { inwestycjeDeweloperskieData } from './data/inwestycjeDeweloperskie.js';
+import { inwestycjeDeweloperskieData } from './data/inwestycjeDeweloperskieData.js';
 import { createGeoJSONOverlay } from './factories/GeoJSONOverlayFactory.js';
 
 const LAYER_COLOR = '#aa7777';

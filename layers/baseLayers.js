@@ -3,17 +3,17 @@ import {MAP_CONFIG} from "../config/mapConfig.js";
 const OSM_ATTRIBUTION = '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 
 const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: MAP_CONFIG.MAX_ZOOM,
+  maxZoom: Math.min(19,MAP_CONFIG.MAX_ZOOM),
   attribution: OSM_ATTRIBUTION
 })
 
 const cyclosmLayer = L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
-  maxZoom: MAP_CONFIG.MAX_ZOOM,
+  maxZoom: Math.min(19,MAP_CONFIG.MAX_ZOOM),
   attribution: OSM_ATTRIBUTION
 })
 
 const cyclosmOverlay =  L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm-lite/{z}/{x}/{y}.png', {
-  maxZoom: MAP_CONFIG.MAX_ZOOM,
+  maxZoom: Math.min(19,MAP_CONFIG.MAX_ZOOM),
   attribution: OSM_ATTRIBUTION
 })
 

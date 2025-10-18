@@ -1,5 +1,5 @@
 import { wspolnotyGeoJSON } from './data/wspolnotyGeoJSON.js';
-import { wspolnotyData } from './data/wspolnoty.js';
+import { wspolnotyData } from './data/wspolnotyData.js';
 import { createGeoJSONOverlay } from './factories/GeoJSONOverlayFactory.js';
 
 const wspolnotyOverlay = createGeoJSONOverlay({

@@ -1,6 +1,6 @@
 
 import { zielenGeoJSON } from './data/zielenGeoJSON.js';
-import { zielenData } from './data/zielen.js';
+import { zielenData } from './data/zielenData.js';
 import { createGeoJSONOverlay } from './factories/GeoJSONOverlayFactory.js';
 
 function getZielenColor({ fid, wlasnosc, stan, wlasciciel }) {
