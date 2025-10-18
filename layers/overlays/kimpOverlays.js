@@ -10,7 +10,7 @@ const overlayTemplate = {
 const url = 'https://mapy.geoportal.gov.pl/wss/ext/KrajowaIntegracjaMiejscowychPlanowZagospodarowaniaPrzestrzennego?'
 
 const layers = {
-  "Strefy MPZP": 'wektor-str',
+  "Strefy MPZP": 'wektor-str,wektor-lzb',
 }
 
 const kimpOverlays = Object.entries(layers).map(([name, layers]) => {
