@@ -1,4 +1,10 @@
 import {
+  osmLayer,
+  cyclosmOverlay,
+  cyclosmLayer
+} from "./baseLayers.js"
+
+import {
   wspolnotyOverlay,
 } from "./overlays/wspolnotyOverlay.js"
 
@@ -22,32 +28,68 @@ import {
   kiutOverlays,
 } from "./overlays/kiutOverlays.js"
 
-const initialZoom = 16
-const initialCenter = [52.18401, 21.03792]
+const params = new URLSearchParams(location.search);
+
+const initialZoom = params.get('zoom') || 16
+const initialCenter = [
+  params.get('lat') || 52.18401,
+  params.get('lng') || 21.03792
+]
 const maxBounds = [[52.19654,21.01968],[52.17150,21.05232]]
 
-let map = L.map('map', {
+const baseLayer = params.get('baseLayer') || 'OpenStreetMap'
+
+const getKeyByLayer = (layer, dict) =>
+  Object.entries(dict).find(([, lyr]) => lyr === layer)?.[0];
+
+const map = L.map('map', {
   center: initialCenter,
   zoom: initialZoom,
-  maxBounds: L.latLngBounds(L.latLng(maxBounds[0]),L.latLng(maxBounds[1]))
+  maxBounds: L.latLngBounds(L.latLng(maxBounds[0]),L.latLng(maxBounds[1])),
+  minZoom: 14,
 });
 
 
 
-let osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-})
+let urlTimer
+const updateUrl = () => {
+  clearTimeout(urlTimer)
+  urlTimer = setTimeout(() => {
+    const mapCenter = map.getCenter()
 
-let cyclosmLayer = L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-})
 
-let cyclosmOverlay =  L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm-lite/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-})
+    // find current base key
+    const currentBaseKey = Object.entries(layers)
+      .find(([, layer]) => map.hasLayer(layer))?.[0]
+
+    params.set('zoom' ,map.getZoom())
+    params.set('lat', mapCenter.lat)
+    params.set('lng', mapCenter.lng)
+    params.set('baseLayer', currentBaseKey || '')
+    params.set('overlays', [...activeOverlayKeys].join(','))
+
+    const newurl = `${window.location.origin}${window.location.pathname}?${params.toString()}`
+    window.history.pushState({path:newurl},'',newurl);
+  }, 150); // small debounce to avoid spam
+};
+
+map.on('moveend zoomend', updateUrl)
+map.on('baselayerchange', updateUrl);
+map.on('overlayadd', (e) => {
+  const key = getKeyByLayer(e.layer, overlays);
+  if (key) activeOverlayKeys.add(key);
+  updateUrl();
+});
+
+map.on('overlayremove', (e) => {
+  const key = getKeyByLayer(e.layer, overlays);
+  if (key) activeOverlayKeys.delete(key);
+  updateUrl();
+});
+
+
+
+
 
 let ortoGeoportalGovPlLayer = L.tileLayer.wms('https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/HighResolution?', {
   layers: "Raster",
@@ -61,7 +103,6 @@ const layers = {
   "OpenStreetMap": osmLayer,
   "CyclOSM": cyclosmLayer,
   "Ortofotomapa": ortoGeoportalGovPlLayer,
-
 }
 
 const overlays = {
@@ -77,9 +118,15 @@ const overlays = {
 L.control.layers(layers,overlays).addTo(map)
 L.control.scale({imperial: false, maxWidth: 200}).addTo(map)
 
-osmLayer.addTo(map)
-wspolnotyOverlay.addTo(map)
-inwestycjeDeweloperskieOverlay.addTo(map)
+layers[baseLayer].addTo(map)
+
+const activeOverlayKeys = new Set(
+  (params.get('overlays') || 'Wspólnoty,Inwestycje deweloperskie')
+    .split(',')
+    .map(s => s.trim())
+    .filter(k => k && overlays[k])
+)
+for (const k of activeOverlayKeys) overlays[k].addTo(map)
 
 async function copyText(text) {
   try {
