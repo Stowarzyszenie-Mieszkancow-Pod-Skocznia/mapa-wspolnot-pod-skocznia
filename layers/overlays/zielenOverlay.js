@@ -8,6 +8,7 @@ function getZielenColor({ fid, wlasnosc, stan, wlasciciel }) {
   if (wlasnosc === 'miejska' && stan === 'urządzone') return '#0a722c';
   if (wlasnosc === 'miejska' && stan === 'nieurządzone') return '#d88812';
   if (wlasnosc === 'prywatna' && stan === 'urządzone') return '#0a1372';
+  if (wlasnosc === 'prywatna' && stan === 'nieurządzone' && wlasciciel === 'znany') return '#7a7fc3';
   if (wlasnosc === 'prywatna' && wlasciciel === 'nieznany') return '#7617c3';
   return '#000';
 }
@@ -61,6 +62,12 @@ const zielenLegend = L.control.Legend({
       label: 'Parki urządzone pozostające w rękach prywatnych',
       color: '#0a1372',
       fillColor: '#0a1372',
+    },
+    {
+      ...DEFAULT_LEGEND_CONFIG,
+      label: 'Działki w własności deweloperów niezagospodarowane',
+      color: '#7a7fc3',
+      fillColor: '#7a7fc3',
     },
     {
       ...DEFAULT_LEGEND_CONFIG,
