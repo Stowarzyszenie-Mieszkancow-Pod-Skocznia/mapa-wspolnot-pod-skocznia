@@ -77,4 +77,14 @@ const zielenLegend = L.control.Legend({
   ]
 })
 
-export { zielenOverlay, zielenLegend };
+function attachZielenLegend(map) {
+  map.on('overlayadd', ({layer}) => {
+    if (layer === zielenOverlay) zielenLegend.addTo(map)
+  });
+
+  map.on('overlayremove', ({layer}) => {
+    if (layer === zielenOverlay) zielenLegend.remove()
+  });
+}
+
+export { zielenOverlay, attachZielenLegend };

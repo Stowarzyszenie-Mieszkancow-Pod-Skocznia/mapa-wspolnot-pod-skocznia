@@ -1,7 +1,7 @@
 import { osmLayer, cyclosmOverlay, cyclosmLayer, geoportalOrtoLayer } from './layers/baseLayers.js';
 import { wspolnotyOverlay } from './layers/overlays/wspolnotyOverlay.js';
 import { inwestycjeDeweloperskieOverlay } from './layers/overlays/inwestycjeDeweloperskieOverlay.js';
-import {zielenLegend, zielenOverlay} from './layers/overlays/zielenOverlay.js';
+import {attachZielenLegend, zielenOverlay} from './layers/overlays/zielenOverlay.js';
 import {kiegOverlays, kimpOverlays, kiutOverlays} from './layers/overlays/gugikOverlays.js';
 import { MAP_CONFIG } from './config/mapConfig.js';
 import { URLSync } from './utils/urlSync.js';
@@ -46,13 +46,8 @@ urlSync.map = map;
 L.control.layers(layers, overlays).addTo(map);
 L.control.scale({ imperial: false, maxWidth: 200 }).addTo(map);
 
-map.on('overlayadd', ({layer}) => {
-  if (layer === zielenOverlay) zielenLegend.addTo(map)
-});
-
-map.on('overlayremove', ({layer}) => {
-  if (layer === zielenOverlay) zielenLegend.remove()
-});
+// Add legends
+attachZielenLegend(map)
 
 // Add base layer
 layers[initialState.baseLayer].addTo(map);
@@ -62,6 +57,8 @@ urlSync.activeOverlayKeys = new Set(initialState.overlays);
 for (const k of urlSync.activeOverlayKeys) {
   overlays[k].addTo(map);
 }
+
+
 
 // Setup event listeners
 urlSync.setupListeners();
