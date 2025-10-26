@@ -2,7 +2,7 @@ import { osmLayer, cyclosmOverlay, cyclosmLayer, geoportalOrtoLayer } from './la
 import { wspolnotyOverlay } from './layers/overlays/wspolnotyOverlay.js';
 import { inwestycjeDeweloperskieOverlay } from './layers/overlays/inwestycjeDeweloperskieOverlay.js';
 import {attachZielenLegend, zielenOverlay} from './layers/overlays/zielenOverlay.js';
-import {kiegOverlays, kimpOverlays, kiutOverlays} from './layers/overlays/gugikOverlays.js';
+import {kiegOverlays, kiutOverlays, umWarszawaOverlays} from './layers/overlays/gugikOverlays.js';
 import { MAP_CONFIG } from './config/mapConfig.js';
 import { URLSync } from './utils/urlSync.js';
 import { setupContextMenu } from './events/mapEvents.js';
@@ -19,8 +19,8 @@ const overlays = {
   "Zieleń": zielenOverlay,
   "Infrastruktura rowerowa (CyclOSM)": cyclosmOverlay,
   ...kiegOverlays,
-  ...kimpOverlays,
   ...kiutOverlays,
+  ...umWarszawaOverlays,
 };
 
 // Initialize URL synchronization
