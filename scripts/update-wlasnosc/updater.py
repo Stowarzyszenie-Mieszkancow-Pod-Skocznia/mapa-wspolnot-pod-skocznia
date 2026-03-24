@@ -50,6 +50,8 @@ _COLOR_TOL = 25     # maks. odległość euklidesowa RGB, żeby uznać dopasowan
 _TILE_DEG  = 0.010  # rozmiar kafelka w stopniach (≈ 1.1 km × 0.7 km)
 _TILE_PX   = 512    # rozdzielczość kafelka w pikselach
 _SAMPLE_R  = 1      # promień uśredniania koloru: kwadrat (2r+1)×(2r+1) = 3×3 px
+# Drugi przebieg dla działek bez klasyfikacji: mniejszy kafelek = lepsza rozdzielczość renderowania
+_HIGHRES_TILE_DEG  = 0.0005   # ≈ 55 m × 35 m – Oracle MapViewer renderuje cienkie pasy poprawnie
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger("updater")
@@ -129,9 +131,9 @@ _XMLI_TMPL = """\
 </map_request>"""
 
 
-def _tile_center(coord: float) -> float:
-    """Zwraca środek kafelka _TILE_DEG, do którego należy dana współrzędna."""
-    return (math.floor(coord / _TILE_DEG) + 0.5) * _TILE_DEG
+def _tile_center(coord: float, tile_deg: float = _TILE_DEG) -> float:
+    """Zwraca środek kafelka tile_deg, do którego należy dana współrzędna."""
+    return (math.floor(coord / tile_deg) + 0.5) * tile_deg
 
 
 def _ring_centroid(ring: list) -> tuple[float, float, float]:
@@ -175,12 +177,13 @@ def _centroid(feature: dict) -> tuple[float, float]:
     return wx / total, wy / total
 
 
-def _render_tile(session: requests.Session, cx: float, cy: float) -> Image.Image | None:
+
+def _render_tile(session: requests.Session, cx: float, cy: float, tile_deg: float = _TILE_DEG) -> Image.Image | None:
     """
     Renderuje kafelek WLASNOSC_MAPA przez Oracle MapViewer XMLI.
     Zwraca obiekt PIL.Image lub None przy błędzie.
     """
-    xml = _XMLI_TMPL.format(px=_TILE_PX, deg=_TILE_DEG, cx=cx, cy=cy)
+    xml = _XMLI_TMPL.format(px=_TILE_PX, deg=tile_deg, cx=cx, cy=cy)
     try:
         r = session.post(
             f"{OM_BASE}/mapviewer/omserver",
@@ -269,6 +272,56 @@ def _sample_points(feature: dict, n_grid: int = 5) -> list[tuple[float, float]]:
     return candidates if candidates else [_centroid(feature)]
 
 
+def _classify_at_scale(
+    session: requests.Session,
+    features: dict[str, dict],
+    tile_deg: float,
+    label: str = "",
+) -> dict[str, str]:
+    """
+    Klasyfikuje własność działek przez próbkowanie kafelków przy danym tile_deg.
+    Zwraca słownik {fid: grupaRejestrowa}.
+    """
+    feature_points: dict[str, list[tuple[float, float]]] = {
+        fid: _sample_points(feat) for fid, feat in features.items()
+    }
+    tile_centers: set[tuple[float, float]] = {
+        (_tile_center(lng, tile_deg), _tile_center(lat, tile_deg))
+        for pts in feature_points.values()
+        for lng, lat in pts
+    }
+
+    prefix = f"  [{label}]" if label else " "
+    log.info("%s %d kafelków (%.4f°) dla %d działek.",
+             prefix, len(tile_centers), tile_deg, len(features))
+
+    tile_images: dict[tuple[float, float], Image.Image | None] = {}
+    for i, (tcx, tcy) in enumerate(sorted(tile_centers), 1):
+        img = _render_tile(session, tcx, tcy, tile_deg)
+        tile_images[(tcx, tcy)] = img
+        log.info("%s Kafelek %d/%d (%.4f,%.4f): %s",
+                 prefix, i, len(tile_centers), tcx, tcy, "OK" if img else "BŁĄD")
+
+    all_votes: dict[str, dict[str, int]] = {}
+    half = tile_deg / 2
+    for fid, pts in feature_points.items():
+        votes: dict[str, int] = {}
+        for lng, lat in pts:
+            tcx, tcy = _tile_center(lng, tile_deg), _tile_center(lat, tile_deg)
+            img = tile_images.get((tcx, tcy))
+            if img is None:
+                continue
+            px = int((lng - (tcx - half)) / tile_deg * _TILE_PX)
+            py = int(((tcy + half) - lat) / tile_deg * _TILE_PX)
+            r, g, b = _sample(img, px, py)
+            cat = _classify(r, g, b)
+            if cat:
+                votes[cat] = votes.get(cat, 0) + 1
+        if votes:
+            all_votes[fid] = votes
+    return all_votes
+
+
 def try_ownership(
     session: requests.Session,
     minx: float, miny: float, maxx: float, maxy: float,
@@ -289,45 +342,28 @@ def try_ownership(
     except requests.RequestException as e:
         log.warning("  Nie udało się nawiązać sesji z portalem: %s", e)
 
-    # Wyznacz punkty próbkowania i zbiór kafelków do pobrania
-    feature_points: dict[str, list[tuple[float, float]]] = {
-        fid: _sample_points(feat) for fid, feat in features.items()
+    _CONFIDENCE_THRESHOLD = 0.70  # min. udział głosów lidera by uznać klasyfikację za pewną
+
+    votes1 = _classify_at_scale(session, features, _TILE_DEG, label="Przebieg 1")
+
+    def _confidence(votes: dict[str, int]) -> float:
+        total = sum(votes.values())
+        return max(votes.values()) / total if total else 0.0
+
+    # Przebieg 2: działki bez klasyfikacji lub z niepewnym wynikiem (głosowanie
+    # podzielone – typowe przy przekraczaniu granicy kafelka) dostają dedykowane
+    # kafelki wysokiej rozdzielczości (_HIGHRES_TILE_DEG).
+    need_highres = {
+        fid: feat for fid, feat in features.items()
+        if fid not in votes1 or _confidence(votes1[fid]) < _CONFIDENCE_THRESHOLD
     }
-    tile_centers: set[tuple[float, float]] = {
-        (_tile_center(lng), _tile_center(lat))
-        for pts in feature_points.values()
-        for lng, lat in pts
-    }
+    if need_highres:
+        log.info("  Przebieg 2 – %d działek (niesklas. lub pewność < %.0f%%), kafelek %.4f°…",
+                 len(need_highres), _CONFIDENCE_THRESHOLD * 100, _HIGHRES_TILE_DEG)
+        votes2 = _classify_at_scale(session, need_highres, _HIGHRES_TILE_DEG, label="Przebieg 2")
+        votes1.update(votes2)
 
-    log.info("  %d kafelków do wyrenderowania dla %d działek.",
-             len(tile_centers), len(features))
-
-    # Renderuj kafelki i cache'uj obrazy
-    tile_images: dict[tuple[float, float], Image.Image | None] = {}
-    for i, (tcx, tcy) in enumerate(sorted(tile_centers), 1):
-        img = _render_tile(session, tcx, tcy)
-        tile_images[(tcx, tcy)] = img
-        log.info("  Kafelek %d/%d (%.4f,%.4f): %s",
-                 i, len(tile_centers), tcx, tcy, "OK" if img else "BŁĄD")
-
-    # Klasyfikuj każdą działkę przez głosowanie większościowe po wielu punktach
-    result: dict[str, str] = {}
-    half = _TILE_DEG / 2
-    for fid, pts in feature_points.items():
-        votes: dict[str, int] = {}
-        for lng, lat in pts:
-            tcx, tcy = _tile_center(lng), _tile_center(lat)
-            img = tile_images.get((tcx, tcy))
-            if img is None:
-                continue
-            px = int((lng - (tcx - half)) / _TILE_DEG * _TILE_PX)
-            py = int(((tcy + half) - lat) / _TILE_DEG * _TILE_PX)
-            r, g, b = _sample(img, px, py)
-            cat = _classify(r, g, b)
-            if cat:
-                votes[cat] = votes.get(cat, 0) + 1
-        if votes:
-            result[fid] = max(votes, key=votes.get)
+    result = {fid: max(v, key=v.get) for fid, v in votes1.items()}
 
     classified = len(result)
     total = len(features)
