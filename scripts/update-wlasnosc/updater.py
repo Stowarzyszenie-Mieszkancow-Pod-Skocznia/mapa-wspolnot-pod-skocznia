@@ -49,7 +49,7 @@ _OWNERSHIP_COLORS: dict[tuple[int, int, int], str] = {
 _COLOR_TOL = 25     # maks. odległość euklidesowa RGB, żeby uznać dopasowanie
 _TILE_DEG  = 0.010  # rozmiar kafelka w stopniach (≈ 1.1 km × 0.7 km)
 _TILE_PX   = 512    # rozdzielczość kafelka w pikselach
-_SAMPLE_R  = 2      # promień uśredniania koloru: kwadrat (2r+1)×(2r+1) = 5×5 px
+_SAMPLE_R  = 1      # promień uśredniania koloru: kwadrat (2r+1)×(2r+1) = 3×3 px
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger("updater")
@@ -234,11 +234,12 @@ def _point_in_ring(lng: float, lat: float, ring: list) -> bool:
     return inside
 
 
-def _sample_points(feature: dict, n_grid: int = 3) -> list[tuple[float, float]]:
+
+def _sample_points(feature: dict, n_grid: int = 5) -> list[tuple[float, float]]:
     """
     Zwraca listę punktów (lng, lat) wewnątrz działki do próbkowania.
-    Generuje siatkę n_grid×n_grid nad bbox, filtruje do punktów wewnątrz.
-    Fallback na centroid gdy żaden punkt siatki nie trafia w wielokąt.
+    Generuje siatkę n_grid×n_grid nad bbox, filtruje do punktów wewnątrz
+    i co najmniej _MIN_EDGE_PX od granicy. Fallback na centroid.
     """
     geom = feature["geometry"]
     coords = geom["coordinates"]
