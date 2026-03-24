@@ -134,19 +134,45 @@ def _tile_center(coord: float) -> float:
     return (math.floor(coord / _TILE_DEG) + 0.5) * _TILE_DEG
 
 
+def _ring_centroid(ring: list) -> tuple[float, float, float]:
+    """Zwraca (cx, cy, area) – centroid i pole pierścienia (Shoelace)."""
+    cx = cy = area = 0.0
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i][0], ring[i][1]
+        x1, y1 = ring[(i + 1) % n][0], ring[(i + 1) % n][1]
+        cross = x0 * y1 - x1 * y0
+        area += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    area /= 2.0
+    if area == 0:
+        return sum(c[0] for c in ring) / n, sum(c[1] for c in ring) / n, 0.0
+    cx /= 6.0 * area
+    cy /= 6.0 * area
+    return cx, cy, abs(area)
+
+
 def _centroid(feature: dict) -> tuple[float, float]:
-    """Zwraca przybliżony centroid wielokąta (lng, lat)."""
+    """Zwraca dokładny centroid wielokąta ważony polem (Shoelace)."""
     geom = feature["geometry"]
     coords = geom["coordinates"]
     if geom["type"] == "Polygon":
-        ring = coords[0]
+        rings = [coords[0]]
     elif geom["type"] == "MultiPolygon":
-        ring = coords[0][0]
+        rings = [poly[0] for poly in coords]
     else:
-        ring = coords
-    lngs = [c[0] for c in ring]
-    lats = [c[1] for c in ring]
-    return sum(lngs) / len(lngs), sum(lats) / len(lats)
+        rings = [coords]
+    # Ważona suma centroidów poszczególnych pierścieni
+    wx = wy = total = 0.0
+    for ring in rings:
+        cx, cy, area = _ring_centroid(ring)
+        wx += cx * area
+        wy += cy * area
+        total += area
+    if total == 0:
+        return rings[0][0][0], rings[0][0][1]
+    return wx / total, wy / total
 
 
 def _render_tile(session: requests.Session, cx: float, cy: float) -> Image.Image | None:
@@ -194,6 +220,54 @@ def _classify(r: int, g: int, b: int) -> str | None:
     return best
 
 
+def _point_in_ring(lng: float, lat: float, ring: list) -> bool:
+    """Test punkt-w-wielokącie metodą rzutowania promienia."""
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if ((yi > lat) != (yj > lat)) and (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _sample_points(feature: dict, n_grid: int = 3) -> list[tuple[float, float]]:
+    """
+    Zwraca listę punktów (lng, lat) wewnątrz działki do próbkowania.
+    Generuje siatkę n_grid×n_grid nad bbox, filtruje do punktów wewnątrz.
+    Fallback na centroid gdy żaden punkt siatki nie trafia w wielokąt.
+    """
+    geom = feature["geometry"]
+    coords = geom["coordinates"]
+    if geom["type"] == "Polygon":
+        rings = [coords[0]]
+    elif geom["type"] == "MultiPolygon":
+        rings = [poly[0] for poly in coords]
+    else:
+        return [_centroid(feature)]
+
+    all_pts = [pt for ring in rings for pt in ring]
+    min_lng = min(p[0] for p in all_pts)
+    max_lng = max(p[0] for p in all_pts)
+    min_lat = min(p[1] for p in all_pts)
+    max_lat = max(p[1] for p in all_pts)
+
+    candidates = []
+    for i in range(n_grid):
+        for j in range(n_grid):
+            lng = min_lng + (i + 0.5) / n_grid * (max_lng - min_lng)
+            lat = min_lat + (j + 0.5) / n_grid * (max_lat - min_lat)
+            for ring in rings:
+                if _point_in_ring(lng, lat, ring):
+                    candidates.append((lng, lat))
+                    break
+
+    return candidates if candidates else [_centroid(feature)]
+
+
 def try_ownership(
     session: requests.Session,
     minx: float, miny: float, maxx: float, maxy: float,
@@ -214,11 +288,15 @@ def try_ownership(
     except requests.RequestException as e:
         log.warning("  Nie udało się nawiązać sesji z portalem: %s", e)
 
-    # Wyznacz zbiór centroid kafelków pokrywających wszystkie działki w bbox
-    tile_centers: set[tuple[float, float]] = set()
-    for feat in features.values():
-        lng, lat = _centroid(feat)
-        tile_centers.add((_tile_center(lng), _tile_center(lat)))
+    # Wyznacz punkty próbkowania i zbiór kafelków do pobrania
+    feature_points: dict[str, list[tuple[float, float]]] = {
+        fid: _sample_points(feat) for fid, feat in features.items()
+    }
+    tile_centers: set[tuple[float, float]] = {
+        (_tile_center(lng), _tile_center(lat))
+        for pts in feature_points.values()
+        for lng, lat in pts
+    }
 
     log.info("  %d kafelków do wyrenderowania dla %d działek.",
              len(tile_centers), len(features))
@@ -231,22 +309,24 @@ def try_ownership(
         log.info("  Kafelek %d/%d (%.4f,%.4f): %s",
                  i, len(tile_centers), tcx, tcy, "OK" if img else "BŁĄD")
 
-    # Klasyfikuj każdą działkę przez próbkowanie piksela w centroidzie
+    # Klasyfikuj każdą działkę przez głosowanie większościowe po wielu punktach
     result: dict[str, str] = {}
     half = _TILE_DEG / 2
-    for fid, feat in features.items():
-        lng, lat = _centroid(feat)
-        tcx, tcy = _tile_center(lng), _tile_center(lat)
-        img = tile_images.get((tcx, tcy))
-        if img is None:
-            continue
-        # Przelicz współrzędne geograficzne na pikselowe w układzie kafelka
-        px = int((lng - (tcx - half)) / _TILE_DEG * _TILE_PX)
-        py = int(((tcy + half) - lat) / _TILE_DEG * _TILE_PX)
-        r, g, b = _sample(img, px, py)
-        cat = _classify(r, g, b)
-        if cat:
-            result[fid] = cat
+    for fid, pts in feature_points.items():
+        votes: dict[str, int] = {}
+        for lng, lat in pts:
+            tcx, tcy = _tile_center(lng), _tile_center(lat)
+            img = tile_images.get((tcx, tcy))
+            if img is None:
+                continue
+            px = int((lng - (tcx - half)) / _TILE_DEG * _TILE_PX)
+            py = int(((tcy + half) - lat) / _TILE_DEG * _TILE_PX)
+            r, g, b = _sample(img, px, py)
+            cat = _classify(r, g, b)
+            if cat:
+                votes[cat] = votes.get(cat, 0) + 1
+        if votes:
+            result[fid] = max(votes, key=votes.get)
 
     classified = len(result)
     total = len(features)
