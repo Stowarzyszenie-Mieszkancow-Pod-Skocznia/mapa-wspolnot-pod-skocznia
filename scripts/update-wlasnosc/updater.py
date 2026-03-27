@@ -25,6 +25,7 @@ import json
 import logging
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import requests
@@ -107,6 +108,22 @@ AND OPIS_PODMIOTU IN ('{owner_miejska}', '{owner_skarbu}')
 AND ({like_clause})
 </info_request>"""
 
+_COOWNED_TMPL = """\
+<?xml version="1.0" standalone="yes"?>
+<info_request datasource="dane_wawa" format="strict">
+SELECT DISTINCT a.ID_EGIB_DZIALKI
+FROM WLASNOSC_DZIALKI_MIASTO a
+WHERE a.RODZAJ_WLS_WLD='W\u0141A\u015aCICIEL'
+AND a.OPIS_PODMIOTU IN ('{owner_miejska}', '{owner_skarbu}')
+AND EXISTS (
+  SELECT 1 FROM WLASNOSC_DZIALKI_MIASTO b
+  WHERE b.IDDZIALKI = a.IDDZIALKI
+  AND b.RODZAJ_WLS_WLD='W\u0141A\u015aCICIEL'
+  AND b.OPIS_PODMIOTU NOT IN ('{owner_miejska}', '{owner_skarbu}')
+)
+AND ({like_clause})
+</info_request>"""
+
 
 def _fetch_ownership_db(
     session: requests.Session, prefixes: list[str]
@@ -155,35 +172,73 @@ def _fetch_ownership_db(
     return result
 
 
+def _fetch_coowned_parcels(
+    session: requests.Session, prefixes: list[str]
+) -> set[str]:
+    """
+    Zwraca zbiór ID_EGIB_DZIALKI dla działek będących we współwłasności
+    publiczno-prywatnej (mają właściciela publicznego ORAZ innego).
+    """
+    like_clause = " OR ".join(
+        f"a.ID_EGIB_DZIALKI LIKE '{p}.%'" for p in sorted(prefixes)
+    )
+    xml = _COOWNED_TMPL.format(
+        owner_miejska=_OWNER_MIEJSKA,
+        owner_skarbu=_OWNER_SKARBU_PANSTWA,
+        like_clause=like_clause,
+    )
+    r = session.post(
+        f"{OM_BASE}/mapviewer/omserver",
+        data={"xml_request": xml},
+        timeout=60,
+    )
+    r.raise_for_status()
+    text = re.sub(r'&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[\da-fA-F]+);)', '&amp;', r.text)
+    root = ET.fromstring(text)
+    if root.tag == "oms_error":
+        log.warning("  Błąd zapytania współwłasności: %s", root.text)
+        return set()
+    return {
+        el.text for row in root.findall("ROW")
+        if (el := row.find("ID_EGIB_DZIALKI")) is not None and el.text
+    }
+
+
 def try_ownership(
     session: requests.Session,
     features: dict[str, dict],
-) -> dict[str, str]:
+) -> dict[str, dict]:
     """
     Klasyfikuje własność działek przez zapytanie SQL do bazy Oracle MapViewer.
 
-    Zwraca słownik {ID_DZIALKI: grupaRejestrowa} dla wszystkich działek.
+    Zwraca słownik {ID_DZIALKI: {"grupaRejestrowa": ..., "wspolna": True?}}.
     Działki nieznalezione w bazie → 'prywatna'.
     """
     log.info("Krok 2 – klasyfikacja własności przez Oracle MapViewer info_request…")
 
-    # Wyodrębnij prefiksy dzielnic z ID działek (np. "146505_8.0237.9/1" → "146505_8")
     prefixes = sorted({fid.split(".")[0] for fid in features})
     log.info("  Prefiksy dzielnic: %s", prefixes)
 
     db_ownership = _fetch_ownership_db(session, prefixes)
-    log.info("  Baza zwróciła %d wpisów dla prefiksów %s.", len(db_ownership), prefixes)
+    log.info("  Baza zwróciła %d wpisów publicznych dla prefiksów %s.", len(db_ownership), prefixes)
 
-    result: dict[str, str] = {}
+    coowned = _fetch_coowned_parcels(session, prefixes)
+    log.info("  Współwłasność publiczno-prywatna: %d działek.", len(coowned))
+
+    result: dict[str, dict] = {}
     for fid in features:
-        result[fid] = db_ownership.get(fid, "prywatna")
+        entry: dict = {"grupaRejestrowa": db_ownership.get(fid, "prywatna")}
+        if fid in coowned:
+            entry["wspolna"] = True
+        result[fid] = entry
 
-    miejska  = sum(1 for v in result.values() if v == "miejska")
-    skarbu   = sum(1 for v in result.values() if v == "skarbu_panstwa")
-    prywatna = sum(1 for v in result.values() if v == "prywatna")
+    miejska  = sum(1 for v in result.values() if v["grupaRejestrowa"] == "miejska")
+    skarbu   = sum(1 for v in result.values() if v["grupaRejestrowa"] == "skarbu_panstwa")
+    prywatna = sum(1 for v in result.values() if v["grupaRejestrowa"] == "prywatna")
+    wspolna  = sum(1 for v in result.values() if v.get("wspolna"))
     log.info(
-        "  Sklasyfikowano %d działek: %d miejska, %d skarbu_panstwa, %d prywatna.",
-        len(result), miejska, skarbu, prywatna,
+        "  Sklasyfikowano %d działek: %d miejska, %d skarbu_panstwa, %d prywatna, %d współwłasność.",
+        len(result), miejska, skarbu, prywatna, wspolna,
     )
     return result
 
@@ -283,6 +338,7 @@ _DATA_HEADER = """\
 //   "miejska"        – Gmina / m.st. Warszawa (grupy rejestrowe 4, 15)
 //   "skarbu_panstwa" – Skarb Państwa / państwowa osoba prawna (grupy 3, 6)
 //   "prywatna"       – Własność prywatna / inne
+// Flaga wspolna: true – współwłasność publiczno-prywatna (podmiot publiczny + inna osoba)
 //
 // Źródło: WLASNOSC_DZIALKI_MIASTO (Oracle MapViewer, dane_wawa)
 // Jak uzupełnić: odszukaj działkę na https://mapa.um.warszawa.pl/mapaApp1/mapa?service=mapa_wlasnosci
@@ -389,13 +445,21 @@ def main() -> None:
     existing_data = read_data_js(data_path)
     new_data      = dict(existing_data)   # zacznij od istniejących danych
     auto_added    = 0
-    for fid, grupa in ownership.items():
-        if fid not in existing_data:        # nigdy nie nadpisuj ręcznych wpisów
-            new_data[fid] = {"grupaRejestrowa": grupa}
+    for fid, entry in ownership.items():
+        if fid not in existing_data:        # nigdy nie nadpisuj ręcznych wpisów grupaRejestrowa
+            new_data[fid] = entry
             auto_added += 1
+        else:
+            # Zachowaj ręczną grupaRejestrowa, ale zawsze odświeżaj flagę wspolna
+            updated = dict(existing_data[fid])
+            if entry.get("wspolna"):
+                updated["wspolna"] = True
+            else:
+                updated.pop("wspolna", None)
+            new_data[fid] = updated
     log.info(
-        "  wlasnoscData: %d auto + %d ręcznych = %d łącznie",
-        auto_added, len(existing_data), len(new_data),
+        "  wlasnoscData: %d nowych auto + %d zaktualizowanych + %d tylko ręcznych = %d łącznie",
+        auto_added, len(existing_data), len(existing_data) - len(new_data) + auto_added, len(new_data),
     )
 
     # ── 3. Zapis ───────────────────────────────────────────────────────────────

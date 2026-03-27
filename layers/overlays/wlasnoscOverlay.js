@@ -20,9 +20,11 @@ const wlasnoscOverlay = createGeoJSONOverlay({
   styleConfig: {
     styleFn: (feature) => {
       const color = getWlasnoscColor(feature.properties.grupaRejestrowa);
+      const wspolna = feature.properties.wspolna;
       return {
-        weight: 1,
-        color,
+        weight:    wspolna ? 2 : 1,
+        color:     wspolna ? '#333333' : color,
+        dashArray: wspolna ? '5 4' : null,
         fillColor: color,
         fillOpacity: feature.properties.grupaRejestrowa ? 0.45 : 0.15,
       };
@@ -44,6 +46,9 @@ const wlasnoscOverlay = createGeoJSONOverlay({
           return `<tr><th style="text-align:left;padding-right:8px;">Własność</th><td>${labels[v] ?? v}</td></tr>`;
         }
       },
+      wspolna: {
+        render: (k, v) => v ? `<tr><th style="text-align:left;padding-right:8px;">Współwłasność</th><td>publiczna + prywatna</td></tr>` : '',
+      },
     }
   }
 });
@@ -54,14 +59,24 @@ const DEFAULT_LEGEND_CONFIG = {
   fillOpacity: 0.45,
 }
 
+const COOWNED_LEGEND_CONFIG = {
+  type: 'rectangle',
+  weight: 2,
+  fillOpacity: 0.45,
+  color: '#333333',
+  dashArray: [5, 4],
+};
+
 const wlasnoscLegend = L.control.Legend({
   position: 'bottomright',
   title: 'Własność gruntów',
   legends: [
-    { ...DEFAULT_LEGEND_CONFIG, label: 'Gmina / m.st. Warszawa',  color: COLORS.miejska,        fillColor: COLORS.miejska },
-    { ...DEFAULT_LEGEND_CONFIG, label: 'Skarb Państwa',           color: COLORS.skarbu_panstwa, fillColor: COLORS.skarbu_panstwa },
-    { ...DEFAULT_LEGEND_CONFIG, label: 'Własność prywatna',       color: COLORS.prywatna,       fillColor: COLORS.prywatna },
-    { ...DEFAULT_LEGEND_CONFIG, label: 'Własność nieznana',       color: COLORS.nieznana,       fillColor: COLORS.nieznana, fillOpacity: 0.15 },
+    { ...DEFAULT_LEGEND_CONFIG, label: 'Gmina / m.st. Warszawa',         color: COLORS.miejska,        fillColor: COLORS.miejska },
+    { ...COOWNED_LEGEND_CONFIG, label: 'Gmina + prywatna (współwł.)',     fillColor: COLORS.miejska },
+    { ...DEFAULT_LEGEND_CONFIG, label: 'Skarb Państwa',                  color: COLORS.skarbu_panstwa, fillColor: COLORS.skarbu_panstwa },
+    { ...COOWNED_LEGEND_CONFIG, label: 'Skarb Państwa + prywatna (współwł.)', fillColor: COLORS.skarbu_panstwa },
+    { ...DEFAULT_LEGEND_CONFIG, label: 'Własność prywatna',              color: COLORS.prywatna,       fillColor: COLORS.prywatna },
+    { ...DEFAULT_LEGEND_CONFIG, label: 'Własność nieznana',              color: COLORS.nieznana,       fillColor: COLORS.nieznana, fillOpacity: 0.15 },
   ]
 });
 
