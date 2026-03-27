@@ -77,23 +77,27 @@ A vendored copy of the Leaflet.Legend plugin. Do not modify; update by replacing
 
 ### `scripts/update-wlasnosc/` — Ownership layer updater
 
-A Dockerized Python script that fetches parcel geometries from Warsaw WFS and auto-classifies ownership by sampling pixel colors from Oracle MapViewer tiles.
+A Python script that fetches parcel geometries from Warsaw WFS and classifies ownership via a direct SQL query to Oracle MapViewer's database. Only requires `requests` — no Docker needed.
 
 ```bash
-docker build -t wlasnosc-updater ./scripts/update-wlasnosc
-docker run --rm -v "$(pwd)/layers/overlays/data:/data" wlasnosc-updater
+pip install requests
+python scripts/update-wlasnosc/updater.py \
+    --geojson layers/overlays/data/wlasnoscGeoJSON.js \
+    --data    layers/overlays/data/wlasnoscData.js
 # Optional: smaller area or dry-run
-docker run --rm -v "$(pwd)/layers/overlays/data:/data" wlasnosc-updater \
+python scripts/update-wlasnosc/updater.py \
+    --geojson layers/overlays/data/wlasnoscGeoJSON.js \
+    --data    layers/overlays/data/wlasnoscData.js \
     --bbox "21.025,52.175,21.045,52.190" --dry-run
 ```
 
-**How ownership classification works:** Warsaw's WFS `GRUPA_REJESTROWA` field is always null. Instead, the script renders PNG tiles from the Oracle MapViewer `WLASNOSC_MAPA` layer via XMLI POST to `/mapviewer/omserver`, then samples the pixel color at each parcel's centroid:
+**How ownership classification works:** Warsaw's WFS `GRUPA_REJESTROWA` field is always null. Instead, the script queries the `WLASNOSC_DZIALKI_MIASTO` table directly via Oracle MapViewer XMLI `info_request` (POST to `/mapviewer/omserver`):
 
-| RGB | Category |
-|-----|----------|
-| `(231, 229, 229)` gray | `prywatna` |
-| `(247, 245, 161)` yellow | `miejska` |
-| `(255, 173, 173)` pink | `skarbu_panstwa` |
+- `OPIS_PODMIOTU = 'MIASTO STOŁECZNE WARSZAWA'` → `miejska`
+- `OPIS_PODMIOTU = 'SKARB PAŃSTWA'` → `skarbu_panstwa`
+- not found in table → `prywatna`
+
+This replaces the former pixel-color-sampling approach (PNG tile rendering). No manual overrides are needed.
 
 **Warsaw WFS quirk:** `startIndex` parameter is not supported — both `startIndex=0` and any positive value return HTTP 400. Use a single request with large `count` (script uses `count=5000`).
 

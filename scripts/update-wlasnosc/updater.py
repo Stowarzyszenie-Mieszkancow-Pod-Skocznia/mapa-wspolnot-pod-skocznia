@@ -3,10 +3,12 @@
 Aktualizuje wlasnoscGeoJSON.js i wlasnoscData.js na podstawie WFS EGIB m.st. Warszawy.
 
 Kroki:
-  1. Identyfikacja obrębów przecinających podany bounding box
-  2. Pobranie wszystkich działek z tych obrębów (paginacja WFS)
-  3. Klasyfikacja własności przez analizę kolorów kafelków Oracle MapViewer (WLASNOSC_MAPA)
-  4. Scalenie z istniejącymi plikami – ręcznie wpisane wpisy NIE są nadpisywane
+  1. Pobranie wszystkich działek z podanego bounding boxu (WFS EGIB)
+  2. Klasyfikacja własności przez zapytanie SQL do bazy Oracle MapViewer (info_request)
+     – MIASTO STOŁECZNE WARSZAWA  → miejska
+     – SKARB PAŃSTWA              → skarbu_panstwa
+     – pozostałe                  → prywatna
+  3. Scalenie z istniejącymi plikami – ręcznie wpisane wpisy NIE są nadpisywane
 
 Użycie:
   python updater.py [--bbox "minLng,minLat,maxLng,maxLat"] [--dry-run]
@@ -19,16 +21,13 @@ Docker:
 """
 
 import argparse
-import io
 import json
 import logging
-import math
 import re
 import sys
 from pathlib import Path
 
 import requests
-from PIL import Image
 
 # ── Konfiguracja ─────────────────────────────────────────────────────────────
 
@@ -36,22 +35,11 @@ WFS_URL      = "https://wms2.um.warszawa.pl/geoserver/wfs/wfs"
 OM_BASE      = "https://mapa.um.warszawa.pl"
 DEFAULT_BBOX = "21.019,52.171,21.052,52.197"   # MAX_BOUNDS z mapConfig.js
 # Serwer odrzuca startIndex > 0 (HTTP 400), ale obsługuje duże count.
-# Używamy jednego żądania z dużym limitem zamiast paginacji.
 MAX_COUNT    = 5000
 
-# Kolory własności w serwisie Oracle MapViewer (WLASNOSC_MAPA) – próbkowanie PNG.
-# Wartości RGB ustalone empirycznie przez renderowanie kafelka testowego.
-_OWNERSHIP_COLORS: dict[tuple[int, int, int], str] = {
-    (231, 229, 229): "prywatna",        # szary  – pozostałe / prywatna
-    (247, 245, 161): "miejska",         # żółty  – Gmina m.st. Warszawa
-    (255, 173, 173): "skarbu_panstwa",  # różowy – Skarb Państwa
-}
-_COLOR_TOL = 25     # maks. odległość euklidesowa RGB, żeby uznać dopasowanie
-_TILE_DEG  = 0.010  # rozmiar kafelka w stopniach (≈ 1.1 km × 0.7 km)
-_TILE_PX   = 512    # rozdzielczość kafelka w pikselach
-_SAMPLE_R  = 1      # promień uśredniania koloru: kwadrat (2r+1)×(2r+1) = 3×3 px
-# Drugi przebieg dla działek bez klasyfikacji: mniejszy kafelek = lepsza rozdzielczość renderowania
-_HIGHRES_TILE_DEG  = 0.0005   # ≈ 55 m × 35 m – Oracle MapViewer renderuje cienkie pasy poprawnie
+# Wartości OPIS_PODMIOTU w tabeli WLASNOSC_DZIALKI_MIASTO (Oracle MapViewer)
+_OWNER_MIEJSKA        = "MIASTO STOŁECZNE WARSZAWA"
+_OWNER_SKARBU_PANSTWA = "SKARB PAŃSTWA"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger("updater")
@@ -77,9 +65,6 @@ def get_parcels_in_bbox(
 
     Zwraca (features, obreby_sorted) – listę surowych obiektów WFS
     i posortowaną listę identyfikatorów obrębów w tym obszarze.
-
-    Krok 1 i 2 w jednym zapytaniu: najpierw identyfikujemy obręby,
-    a następnie pobieramy pełną geometrię działek z podanego bbox.
     """
     log.info("Krok 1 – pobieranie działek w bbox (%.4f,%.4f – %.4f,%.4f)…",
              minx, miny, maxx, maxy)
@@ -111,270 +96,95 @@ def get_parcels_in_bbox(
     return features, obreby
 
 
-# ── Własność przez analizę kolorów kafelków ───────────────────────────────────
+# ── Własność przez Oracle MapViewer info_request ──────────────────────────────
 
-_XMLI_TMPL = """\
+_INFO_TMPL = """\
 <?xml version="1.0" standalone="yes"?>
-<map_request version="1.0.0" datasource="dane_wawa" basemap=""
-             antialiasing="false" width="{px}" height="{px}"
-             bgcolor="#FFFFFF" format="PNG_STREAM">
-  <center size="{deg}">
-    <geoFeature>
-      <geometricProperty typeName="center">
-        <Point srsName="EPSG:4326"><coordinates>{cx},{cy}</coordinates></Point>
-      </geometricProperty>
-    </geoFeature>
-  </center>
-  <themes>
-    <theme name="WLASNOSC_MAPA"/>
-  </themes>
-</map_request>"""
+<info_request datasource="dane_wawa" format="non-strict">
+SELECT ID_EGIB_DZIALKI, OPIS_PODMIOTU FROM WLASNOSC_DZIALKI_MIASTO
+WHERE RODZAJ_WLS_WLD='W\u0141A\u015aCICIEL'
+AND OPIS_PODMIOTU IN ('{owner_miejska}', '{owner_skarbu}')
+AND ({like_clause})
+</info_request>"""
 
 
-def _tile_center(coord: float, tile_deg: float = _TILE_DEG) -> float:
-    """Zwraca środek kafelka tile_deg, do którego należy dana współrzędna."""
-    return (math.floor(coord / tile_deg) + 0.5) * tile_deg
-
-
-def _ring_centroid(ring: list) -> tuple[float, float, float]:
-    """Zwraca (cx, cy, area) – centroid i pole pierścienia (Shoelace)."""
-    cx = cy = area = 0.0
-    n = len(ring)
-    for i in range(n):
-        x0, y0 = ring[i][0], ring[i][1]
-        x1, y1 = ring[(i + 1) % n][0], ring[(i + 1) % n][1]
-        cross = x0 * y1 - x1 * y0
-        area += cross
-        cx += (x0 + x1) * cross
-        cy += (y0 + y1) * cross
-    area /= 2.0
-    if area == 0:
-        return sum(c[0] for c in ring) / n, sum(c[1] for c in ring) / n, 0.0
-    cx /= 6.0 * area
-    cy /= 6.0 * area
-    return cx, cy, abs(area)
-
-
-def _centroid(feature: dict) -> tuple[float, float]:
-    """Zwraca dokładny centroid wielokąta ważony polem (Shoelace)."""
-    geom = feature["geometry"]
-    coords = geom["coordinates"]
-    if geom["type"] == "Polygon":
-        rings = [coords[0]]
-    elif geom["type"] == "MultiPolygon":
-        rings = [poly[0] for poly in coords]
-    else:
-        rings = [coords]
-    # Ważona suma centroidów poszczególnych pierścieni
-    wx = wy = total = 0.0
-    for ring in rings:
-        cx, cy, area = _ring_centroid(ring)
-        wx += cx * area
-        wy += cy * area
-        total += area
-    if total == 0:
-        return rings[0][0][0], rings[0][0][1]
-    return wx / total, wy / total
-
-
-
-def _render_tile(session: requests.Session, cx: float, cy: float, tile_deg: float = _TILE_DEG) -> Image.Image | None:
-    """
-    Renderuje kafelek WLASNOSC_MAPA przez Oracle MapViewer XMLI.
-    Zwraca obiekt PIL.Image lub None przy błędzie.
-    """
-    xml = _XMLI_TMPL.format(px=_TILE_PX, deg=tile_deg, cx=cx, cy=cy)
-    try:
-        r = session.post(
-            f"{OM_BASE}/mapviewer/omserver",
-            data={"xml_request": xml},
-            timeout=30,
-        )
-        if r.status_code != 200 or not r.content.startswith(b"\x89PNG"):
-            log.debug("  Kafelek (%.4f,%.4f): HTTP %d, treść=%r…",
-                      cx, cy, r.status_code, r.content[:40])
-            return None
-        return Image.open(io.BytesIO(r.content)).convert("RGB")
-    except Exception as exc:
-        log.debug("  Kafelek (%.4f,%.4f): wyjątek %s", cx, cy, exc)
-        return None
-
-
-def _sample(img: Image.Image, px: int, py: int) -> tuple[int, int, int]:
-    """Uśrednia kolor w kwadracie (2·r+1)×(2·r+1) wokół piksela (px, py)."""
-    w, h = img.size
-    rs = gs = bs = n = 0
-    for dy in range(-_SAMPLE_R, _SAMPLE_R + 1):
-        for dx in range(-_SAMPLE_R, _SAMPLE_R + 1):
-            x, y = px + dx, py + dy
-            if 0 <= x < w and 0 <= y < h:
-                r, g, b = img.getpixel((x, y))
-                rs += r; gs += g; bs += b; n += 1
-    return (rs // n, gs // n, bs // n) if n else img.getpixel((px, py))
-
-
-def _classify(r: int, g: int, b: int) -> str | None:
-    """Klasyfikuje kolor piksela na kategorię własności lub None przy braku dopasowania."""
-    best, best_d = None, _COLOR_TOL
-    for (cr, cg, cb), cat in _OWNERSHIP_COLORS.items():
-        d = ((r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2) ** 0.5
-        if d < best_d:
-            best_d, best = d, cat
-    return best
-
-
-def _point_in_ring(lng: float, lat: float, ring: list) -> bool:
-    """Test punkt-w-wielokącie metodą rzutowania promienia."""
-    inside = False
-    n = len(ring)
-    j = n - 1
-    for i in range(n):
-        xi, yi = ring[i][0], ring[i][1]
-        xj, yj = ring[j][0], ring[j][1]
-        if ((yi > lat) != (yj > lat)) and (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi):
-            inside = not inside
-        j = i
-    return inside
-
-
-
-def _sample_points(feature: dict, n_grid: int = 5) -> list[tuple[float, float]]:
-    """
-    Zwraca listę punktów (lng, lat) wewnątrz działki do próbkowania.
-    Generuje siatkę n_grid×n_grid nad bbox, filtruje do punktów wewnątrz
-    i co najmniej _MIN_EDGE_PX od granicy. Fallback na centroid.
-    """
-    geom = feature["geometry"]
-    coords = geom["coordinates"]
-    if geom["type"] == "Polygon":
-        rings = [coords[0]]
-    elif geom["type"] == "MultiPolygon":
-        rings = [poly[0] for poly in coords]
-    else:
-        return [_centroid(feature)]
-
-    all_pts = [pt for ring in rings for pt in ring]
-    min_lng = min(p[0] for p in all_pts)
-    max_lng = max(p[0] for p in all_pts)
-    min_lat = min(p[1] for p in all_pts)
-    max_lat = max(p[1] for p in all_pts)
-
-    candidates = []
-    for i in range(n_grid):
-        for j in range(n_grid):
-            lng = min_lng + (i + 0.5) / n_grid * (max_lng - min_lng)
-            lat = min_lat + (j + 0.5) / n_grid * (max_lat - min_lat)
-            for ring in rings:
-                if _point_in_ring(lng, lat, ring):
-                    candidates.append((lng, lat))
-                    break
-
-    return candidates if candidates else [_centroid(feature)]
-
-
-def _classify_at_scale(
-    session: requests.Session,
-    features: dict[str, dict],
-    tile_deg: float,
-    label: str = "",
+def _fetch_ownership_db(
+    session: requests.Session, prefixes: list[str]
 ) -> dict[str, str]:
     """
-    Klasyfikuje własność działek przez próbkowanie kafelków przy danym tile_deg.
-    Zwraca słownik {fid: grupaRejestrowa}.
+    Wysyła info_request do Oracle MapViewer i zwraca słownik {ID_EGIB_DZIALKI: kategoria}.
+    Kategoria to 'miejska' lub 'skarbu_panstwa'; pominięte ID traktujemy jako 'prywatna'.
     """
-    feature_points: dict[str, list[tuple[float, float]]] = {
-        fid: _sample_points(feat) for fid, feat in features.items()
-    }
-    tile_centers: set[tuple[float, float]] = {
-        (_tile_center(lng, tile_deg), _tile_center(lat, tile_deg))
-        for pts in feature_points.values()
-        for lng, lat in pts
-    }
+    like_clause = " OR ".join(
+        f"ID_EGIB_DZIALKI LIKE '{p}.%'" for p in sorted(prefixes)
+    )
+    xml = _INFO_TMPL.format(
+        owner_miejska=_OWNER_MIEJSKA,
+        owner_skarbu=_OWNER_SKARBU_PANSTWA,
+        like_clause=like_clause,
+    )
 
-    prefix = f"  [{label}]" if label else " "
-    log.info("%s %d kafelków (%.4f°) dla %d działek.",
-             prefix, len(tile_centers), tile_deg, len(features))
+    r = session.post(
+        f"{OM_BASE}/mapviewer/omserver",
+        data={"xml_request": xml},
+        timeout=60,
+    )
+    r.raise_for_status()
 
-    tile_images: dict[tuple[float, float], Image.Image | None] = {}
-    for i, (tcx, tcy) in enumerate(sorted(tile_centers), 1):
-        img = _render_tile(session, tcx, tcy, tile_deg)
-        tile_images[(tcx, tcy)] = img
-        log.info("%s Kafelek %d/%d (%.4f,%.4f): %s",
-                 prefix, i, len(tile_centers), tcx, tcy, "OK" if img else "BŁĄD")
+    # Format non-strict: "COL1 COL2 ,\nVAL1 VAL2 ,\n..."
+    # ID_EGIB_DZIALKI nie zawiera spacji; reszta linii to OPIS_PODMIOTU.
+    result: dict[str, str] = {}
+    lines = r.text.strip().splitlines()
+    for line in lines[1:]:   # pomiń nagłówek
+        line = line.strip()
+        if not line:
+            continue
+        if line.endswith(" ,"):
+            line = line[:-2]
+        elif line.endswith(","):
+            line = line[:-1]
+        parts = line.split(" ", 1)
+        if len(parts) < 2:
+            continue
+        fid, podmiot = parts[0].strip(), parts[1].strip()
+        if podmiot == _OWNER_MIEJSKA:
+            result[fid] = "miejska"
+        elif podmiot == _OWNER_SKARBU_PANSTWA:
+            result[fid] = "skarbu_panstwa"
 
-    all_votes: dict[str, dict[str, int]] = {}
-    half = tile_deg / 2
-    for fid, pts in feature_points.items():
-        votes: dict[str, int] = {}
-        for lng, lat in pts:
-            tcx, tcy = _tile_center(lng, tile_deg), _tile_center(lat, tile_deg)
-            img = tile_images.get((tcx, tcy))
-            if img is None:
-                continue
-            px = int((lng - (tcx - half)) / tile_deg * _TILE_PX)
-            py = int(((tcy + half) - lat) / tile_deg * _TILE_PX)
-            r, g, b = _sample(img, px, py)
-            cat = _classify(r, g, b)
-            if cat:
-                votes[cat] = votes.get(cat, 0) + 1
-        if votes:
-            all_votes[fid] = votes
-    return all_votes
+    return result
 
 
 def try_ownership(
     session: requests.Session,
-    minx: float, miny: float, maxx: float, maxy: float,
     features: dict[str, dict],
 ) -> dict[str, str]:
     """
-    Klasyfikuje własność działek na podstawie kolorów kafelków WLASNOSC_MAPA
-    renderowanych przez Oracle MapViewer XMLI.
+    Klasyfikuje własność działek przez zapytanie SQL do bazy Oracle MapViewer.
 
-    Zwraca słownik {ID_DZIALKI: grupaRejestrowa}.
+    Zwraca słownik {ID_DZIALKI: grupaRejestrowa} dla wszystkich działek.
+    Działki nieznalezione w bazie → 'prywatna'.
     """
-    log.info("Krok 2 – klasyfikacja własności przez analizę kafelków Oracle MapViewer…")
+    log.info("Krok 2 – klasyfikacja własności przez Oracle MapViewer info_request…")
 
-    # Inicjuj sesję z portalem (wymagane ciasteczko sesji do renderowania)
-    try:
-        session.get(f"{OM_BASE}/mapaApp1/mapa?service=mapa_wlasnosci", timeout=15)
-        log.info("  Sesja z portalem nawiązana.")
-    except requests.RequestException as e:
-        log.warning("  Nie udało się nawiązać sesji z portalem: %s", e)
+    # Wyodrębnij prefiksy dzielnic z ID działek (np. "146505_8.0237.9/1" → "146505_8")
+    prefixes = sorted({fid.split(".")[0] for fid in features})
+    log.info("  Prefiksy dzielnic: %s", prefixes)
 
-    _CONFIDENCE_THRESHOLD = 0.70  # min. udział głosów lidera by uznać klasyfikację za pewną
+    db_ownership = _fetch_ownership_db(session, prefixes)
+    log.info("  Baza zwróciła %d wpisów dla prefiksów %s.", len(db_ownership), prefixes)
 
-    votes1 = _classify_at_scale(session, features, _TILE_DEG, label="Przebieg 1")
+    result: dict[str, str] = {}
+    for fid in features:
+        result[fid] = db_ownership.get(fid, "prywatna")
 
-    def _confidence(votes: dict[str, int]) -> float:
-        total = sum(votes.values())
-        return max(votes.values()) / total if total else 0.0
-
-    # Przebieg 2: działki bez klasyfikacji lub z niepewnym wynikiem (głosowanie
-    # podzielone – typowe przy przekraczaniu granicy kafelka) dostają dedykowane
-    # kafelki wysokiej rozdzielczości (_HIGHRES_TILE_DEG).
-    need_highres = {
-        fid: feat for fid, feat in features.items()
-        if fid not in votes1 or _confidence(votes1[fid]) < _CONFIDENCE_THRESHOLD
-    }
-    if need_highres:
-        log.info("  Przebieg 2 – %d działek (niesklas. lub pewność < %.0f%%), kafelek %.4f°…",
-                 len(need_highres), _CONFIDENCE_THRESHOLD * 100, _HIGHRES_TILE_DEG)
-        votes2 = _classify_at_scale(session, need_highres, _HIGHRES_TILE_DEG, label="Przebieg 2")
-        votes1.update(votes2)
-
-    result = {fid: max(v, key=v.get) for fid, v in votes1.items()}
-
-    classified = len(result)
-    total = len(features)
-    log.info("  Sklasyfikowano %d / %d działek (%.0f%%).",
-             classified, total, 100 * classified / total if total else 0)
-    if classified < total * 0.5:
-        log.warning(
-            "  Mniej niż 50%% działek sklasyfikowanych.\n"
-            "  Uzupełnij brakujące wpisy ręcznie korzystając z:\n"
-            "  https://mapa.um.warszawa.pl/mapaApp1/mapa?service=mapa_wlasnosci"
-        )
+    miejska  = sum(1 for v in result.values() if v == "miejska")
+    skarbu   = sum(1 for v in result.values() if v == "skarbu_panstwa")
+    prywatna = sum(1 for v in result.values() if v == "prywatna")
+    log.info(
+        "  Sklasyfikowano %d działek: %d miejska, %d skarbu_panstwa, %d prywatna.",
+        len(result), miejska, skarbu, prywatna,
+    )
     return result
 
 
@@ -474,8 +284,9 @@ _DATA_HEADER = """\
 //   "skarbu_panstwa" – Skarb Państwa / państwowa osoba prawna (grupy 3, 6)
 //   "prywatna"       – Własność prywatna / inne
 //
-// Źródło: https://mapa.um.warszawa.pl/mapaApp1/mapa?service=mapa_wlasnosci
-// Jak uzupełnić: odszukaj działkę na powyższej mapie, sprawdź kolor i wpisz tutaj.
+// Źródło: WLASNOSC_DZIALKI_MIASTO (Oracle MapViewer, dane_wawa)
+// Jak uzupełnić: odszukaj działkę na https://mapa.um.warszawa.pl/mapaApp1/mapa?service=mapa_wlasnosci
+//                sprawdź kolor i wpisz tutaj.
 
 const wlasnoscData = {"""
 
@@ -531,7 +342,7 @@ def main() -> None:
     data_path    = Path(args.data)
 
     session = requests.Session()
-    session.headers["User-Agent"] = "wlasnosc-updater/1.0 (mapaPodSkocznia)"
+    session.headers["User-Agent"] = "wlasnosc-updater/2.0 (mapaPodSkocznia)"
 
     # ── 1. Działki i obręby ────────────────────────────────────────────────────
     wfs_features, obreby = get_parcels_in_bbox(session, minx, miny, maxx, maxy)
@@ -573,7 +384,7 @@ def main() -> None:
     )
 
     # ── 2. Własność ────────────────────────────────────────────────────────────
-    ownership = try_ownership(session, minx, miny, maxx, maxy, new_by_id)
+    ownership = try_ownership(session, new_by_id)
 
     existing_data = read_data_js(data_path)
     new_data      = dict(existing_data)   # zacznij od istniejących danych
