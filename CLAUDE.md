@@ -34,6 +34,8 @@ There are no tests, no lint commands, and no CI.
 - `inwestycjeDeweloperskieOverlay` — developer investment sites
 - `zielenOverlay` — greenery parcels, color-coded by ownership/condition; exports `attachZielenLegend()` to toggle the map legend on overlay add/remove
 - `wlasnoscOverlay` — land ownership parcels (4 000+ parcels), color-coded by ownership category (miejska/skarbu_panstwa/prywatna/nieznana); exports `attachWlasnoscLegend()`
+- `drzewaOverlay` — tree inventory (15 000+ points), color-coded by health status; uses `L.geoJSON` directly with `pointToLayer` + canvas renderer (not `createGeoJSONOverlay` — no `pointToLayer` support there); exports `attachDrzewaLegend()`
+- `decyzjeWzOverlay` — warunki zabudowy decisions (polygons), color-coded by type (new/modernization/LICP); exports `attachDecyzjeWzLegend()`
 
 **WMS overlays** (`layers/overlays/gugikOverlays.js`) — remote tile layers using `createWMSOverlays()`:
 - `kiegOverlays` — buildings, parcels, parcel numbers (GUGiK KIEG service)
@@ -102,3 +104,24 @@ This replaces the former pixel-color-sampling approach (PNG tile rendering). No 
 **Warsaw WFS quirk:** `startIndex` parameter is not supported — both `startIndex=0` and any positive value return HTTP 400. Use a single request with large `count` (script uses `count=5000`).
 
 **Merge safety:** The script never overwrites manually added entries in `wlasnoscData.js`. It only adds entries for `fid`s not already present.
+
+### `scripts/fetch-mapviewer/` — MapViewer data fetchers
+
+Standalone Python scripts (only `requests` needed) that query the Oracle MapViewer `dane_wawa` datasource via `info_request` XMLI and write GeoJSON data files. See `scripts/update-wlasnosc/RESEARCH.md` for full datasource documentation.
+
+```bash
+# Tree inventory (~15 000 points, ~5 MB output)
+python scripts/fetch-mapviewer/fetch_drzewa.py
+
+# Warunki zabudowy decisions (~90 polygons)
+python scripts/fetch-mapviewer/fetch_decyzje_wz.py
+
+# Optional: custom bbox or dry-run
+python scripts/fetch-mapviewer/fetch_drzewa.py --bbox "21.025,52.175,21.045,52.190" --dry-run
+```
+
+**Oracle MapViewer `info_request` quirks:**
+- `SHAPE.SDO_POINT.X` fails directly — use `SDO_CS.TRANSFORM(SHAPE, 4326).SDO_POINT.X` for WGS84 point coords
+- CLOB columns (e.g. `GEOMETRY_JSON_WGS`) via `TO_CHAR(DBMS_LOB.SUBSTR(col, 3500, 1))`
+- `format="strict"` returns XML ROWSET/ROW; `format="non-strict"` returns space-delimited CSV
+- Unescaped `&` in text fields breaks XML parsing — pre-process with regex before `ET.fromstring()`

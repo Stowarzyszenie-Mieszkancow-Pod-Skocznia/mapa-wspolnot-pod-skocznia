@@ -3,6 +3,8 @@ import { wspolnotyOverlay } from './layers/overlays/wspolnotyOverlay.js';
 import { inwestycjeDeweloperskieOverlay } from './layers/overlays/inwestycjeDeweloperskieOverlay.js';
 import {attachZielenLegend, zielenOverlay} from './layers/overlays/zielenOverlay.js';
 import {attachWlasnoscLegend, wlasnoscOverlay} from './layers/overlays/wlasnoscOverlay.js';
+import { drzewaOverlay, attachDrzewaLegend } from './layers/overlays/drzewaOverlay.js';
+import { decyzjeWzOverlay, attachDecyzjeWzLegend } from './layers/overlays/decyzjeWzOverlay.js';
 import {kiegOverlays, kiutOverlays, umWarszawaOverlays} from './layers/overlays/gugikOverlays.js';
 import { MAP_CONFIG } from './config/mapConfig.js';
 import { URLSync } from './utils/urlSync.js';
@@ -19,6 +21,8 @@ const overlays = {
   "Inwestycje deweloperskie": inwestycjeDeweloperskieOverlay,
   "Zieleń": zielenOverlay,
   "Własność gruntów": wlasnoscOverlay,
+  "Drzewa": drzewaOverlay,
+  "Warunki zabudowy": decyzjeWzOverlay,
   "Infrastruktura rowerowa (CyclOSM)": cyclosmOverlay,
   ...kiegOverlays,
   ...kiutOverlays,
@@ -51,6 +55,8 @@ L.control.scale({ imperial: false, maxWidth: 200 }).addTo(map);
 // Add legends
 attachZielenLegend(map)
 attachWlasnoscLegend(map)
+attachDrzewaLegend(map)
+attachDecyzjeWzLegend(map)
 
 // Add base layer
 layers[initialState.baseLayer].addTo(map);
