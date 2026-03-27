@@ -35,13 +35,18 @@ SELECT ...
 **Tabela:** `WLASNOSC_DZIALKI_MIASTO`
 **Klucz:** `ID_EGIB_DZIALKI` (VARCHAR2) = format WFS: `146505_8.0237.9/1`
 **Filtr:** `RODZAJ_WLS_WLD='WŁAŚCICIEL'`
+
+**Znane wartości `RODZAJ_WLS_WLD`:**
+- `'WŁAŚCICIEL'` — właściciel nieruchomości
+- `'GOSP. ZASOBEM NIERUCH.'` — zarządca zasobu nieruchomości (np. Prezydent Miasta Stołecznego Warszawy zarządzający gruntami Skarbu Państwa) — **nie jest właścicielem**, nie należy go klasyfikować jako współwłaściciela
+
 **Klasyfikacja:**
 - `OPIS_PODMIOTU = 'MIASTO STOŁECZNE WARSZAWA'` → `miejska`
 - `OPIS_PODMIOTU = 'SKARB PAŃSTWA'` → `skarbu_panstwa`
 - brak wpisu → `prywatna`
 
-Wyniki dla bbox mapy (21.019,52.171–21.052,52.197):
-- 2286 miejska, 49 skarbu_panstwa, 2078 prywatna (łącznie 4413)
+Wyniki dla aktualnego bbox mapy (21.0214,52.1742–21.0474,52.1922):
+- 1360 miejska, 21 skarbu_panstwa, 1447 prywatna, 243 współwłasność (łącznie 2828)
 
 Implementacja: `scripts/update-wlasnosc/updater.py` (jeden SQL, ~3 sekundy).
 
@@ -212,8 +217,10 @@ dąb szypułkowy (297 cm, 24 m), buk pospolity (335 cm, 21 m), gnejs (kamień).
 **Tabela:** `WLASNOSC_DZIALKI_INNY_PODMIOT`
 **Klucz:** `ID_EGIB_DZIALKI`
 
-Lepsza od `WLASNOSC_DZIALKI_MIASTO` do identyfikacji współwłasności — podaje konkretną nazwę
-współwłaściciela zamiast ogólnego „OSOBA FIZYCZNA":
+Używana do pobierania konkretnych nazw współwłaścicieli zamiast ogólnego „OSOBA FIZYCZNA".
+**Uwaga:** Nie filtrować po `MOJ_PODMIOT` w SQL — polskie znaki powodują 0 wyników przez błąd kodowania.
+Filtrować `OBCY_PODMIOT` w Pythonie: pominąć wpisy, gdzie `OBCY_PODMIOT` jest tym samym podmiotem
+co główny właściciel działki (np. `SKARB PAŃSTWA` jako współwłaściciel działki SP — redundantne).
 
 | Kolumna | Opis |
 |---------|------|
