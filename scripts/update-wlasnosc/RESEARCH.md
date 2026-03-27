@@ -250,6 +250,68 @@ Niedziałające przez `info_request` (MAPVIEWER-00083): zapytania z `<` lub `>` 
 
 ---
 
+## MPZP — przeznaczenie terenu (WGLĄD: 2026-03-27)
+
+### Źródła danych
+
+| Źródło | Typ | Opis |
+|--------|-----|------|
+| `wms.um.warszawa.pl/serwis` (MPZP_PRZEZNACZENIE_TERENU) | WMS raster | Już w projekcie (`umWarszawaOverlays`). Tylko kafelki — brak geometrii wektorowej. |
+| `wfs.um.warszawa.pl/serwis` | WFS | Tylko zakresy planów (`PLANY_ZAKRESY_OBOWIAZUJACE`, `PLANY_ZAKRESY_SPORZADZANE`) — brak stref przeznaczenia. |
+| Oracle MapViewer `PLANY_PRZEZNACZENIE_TERENU_MV` | SQL | Ma `FUN_SYMB`, `FUN_NAZWA`, `GEOMETRY` (SDO_GEOMETRY) — **brak `GEOMETRY_JSON_WGS`**, nie można pobrać poligonów GeoJSON przez `info_request`. |
+| **REST API `PrzeznaczenieTerenow`** | **REST → GeoJSON** | **Najlepsza opcja.** Zwraca pełne poligony WGS84 jako GeoJSON. |
+
+### REST API PrzeznaczenieTerenow
+
+**Base URL:** `https://mapa.um.warszawa.pl/WebServices/PrzeznaczenieTerenow/wgs84/`
+
+**Endpointy:**
+- `findByPlanName/{nazwa_planu}` — wszystkie strefy dla planu (FeatureCollection)
+- `findByCoordinates/{lon}/{lat}` — strefa dla punktu (Feature)
+- `findByFunSymb/{fun_symb}`, `findByFunName/{fun_nazwa}`, `findByHilucs/{hilucs}`
+
+Brak autoryzacji, brak paginacji — jeden request na plan.
+
+**Pola w odpowiedzi:**
+
+| Pole | Opis |
+|------|------|
+| `objectid` | ID rekordu |
+| `fun_symb` | Symbol strefy (np. `K28 MNI`, `25 KDD`) — numer + kod |
+| `fun_nazwa` | Nazwa funkcji (np. "zabudowa jednorodzinna intensywna") |
+| `inten_zab` | Intensywność zabudowy |
+| `max_wys` | Maks. wysokość (m) |
+| `licz_kond` | Liczba kondygnacji |
+| `pow_bio` | Pow. biologicznie czynna (%) |
+| `hilucs` | Kod HILUCS |
+| `nazwa_plan` | Nazwa planu |
+
+### Plany obowiązujące w bbox mapy
+
+Z tabeli `PLANY_ZAKRESY_OBOWIAZUJACE` (bbox 21.0214–21.0474, 52.1742–52.1922):
+
+| NAZWA_KR | NR_UCHW | DATA_WEJSC | POW_HA |
+|----------|---------|------------|--------|
+| rejonu pod Skocznią cz. I | XLII/1299/2008 | 2009-01-05 | 207.2 |
+| Stegny | XXXIV/1020/2008 | 2008-08-01 | 100.7 |
+| Sadyba Pn. cz. I | LXVIII/1817/2013 | 2013-12-27 | 89.7 |
+| Służew nad Dolinką cz. I | VII/130/2024 | 2024-08-23 | 64.2 |
+| rej. ul. Patkowskiego | XXIX/1068/2025 | 2025-01-08 | 65.8 |
+| rej. tzw. Dworca Pd. | LXXVII/2422/2006 | 2006-08-28 | 55.1 |
+| Park Dolina Służewska | XI/315/2007 | 2007-08-16 | 46.3 |
+| Ksawerów | XCIV/2818/2010 | 2011-01-13 | 42.0 |
+| rej. skrzyż. ul. Sikorskiego-Sobieskiego | XCIV/2807/2010 | 2011-01-12 | 41.4 |
+| ok. ul. Krasickiego i ul. Malczewskiego | XXIII/882/2025 | 2025-08-07 | 37.6 |
+| Wierzbno w rej. ul. Krasickiego | XCIII/2382/2014 | 2015-01-05 | 24.2 |
+| Sielce-Beethovena | XCIV/2412/2014 | 2015-01-15 | 16.6 |
+| rej. ul. Merliniego cz. I | XCIII/2735/2010 | 2011-01-12 | 11.7 |
+| Św. Katarzyna cz. II | LXXI/2320/2022 | 2022-11-25 | 7.9 |
+
+Fetch script pobiera nazwy z `PLANY_ZAKRESY_OBOWIAZUJACE` przez Oracle MapViewer,
+następnie woła `findByPlanName` dla każdej nazwy przez REST API.
+
+---
+
 ## Inne interesujące tematy
 
 - `BOS_ZIELEN_ZASIEG_KORON` / `ZASIEGI_KORON_DRZEW` — zasięgi koron drzew (poligony)
