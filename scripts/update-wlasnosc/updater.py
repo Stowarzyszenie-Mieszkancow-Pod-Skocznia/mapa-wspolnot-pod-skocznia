@@ -190,6 +190,8 @@ def _fetch_coowner_data(
         log.warning("  Błąd zapytania WLASNOSC_DZIALKI_INNY_PODMIOT: %s", root.text)
         return {}
 
+    _PUBLIC = {_OWNER_MIEJSKA, _OWNER_SKARBU_PANSTWA}
+
     by_fid: dict[str, list[str]] = {}
     for row in root.findall("ROW"):
         fid_el  = row.find("ID_EGIB_DZIALKI")
@@ -198,7 +200,7 @@ def _fetch_coowner_data(
             continue
         fid  = fid_el.text.strip()
         obcy = obcy_el.text.strip() if obcy_el is not None and obcy_el.text else None
-        if obcy:
+        if obcy and obcy not in _PUBLIC:
             by_fid.setdefault(fid, []).append(obcy)
 
     return {fid: " / ".join(owners) for fid, owners in by_fid.items()}
