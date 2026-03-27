@@ -7,9 +7,7 @@
 //   "prywatna"       – Własność prywatna / inne
 // Flaga wspolna: true – współwłasność publiczno-prywatna (podmiot publiczny + inna osoba)
 //
-// Źródło: WLASNOSC_DZIALKI_MIASTO (Oracle MapViewer, dane_wawa)
-// Jak uzupełnić: odszukaj działkę na https://mapa.um.warszawa.pl/mapaApp1/mapa?service=mapa_wlasnosci
-//                sprawdź kolor i wpisz tutaj.
+// Źródło: WLASNOSC_DZIALKI_MIASTO (Oracle MapViewer, dane_wawa) – dane autorytatywne, nie edytować ręcznie.
 
 const wlasnoscData = {
   "146505_8.0126.120": {"grupaRejestrowa":"miejska"},
