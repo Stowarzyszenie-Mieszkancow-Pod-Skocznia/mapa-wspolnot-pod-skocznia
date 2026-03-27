@@ -1,4 +1,4 @@
-# Oracle MapViewer `dane_wawa` — wyniki eksploracji
+W# Oracle MapViewer `dane_wawa` — wyniki eksploracji
 
 ## Metoda dostępu
 
@@ -125,14 +125,132 @@ Opcje: `DBMS_LOB.SUBSTR(GEOMETRY_JSON_WGS, 3500, 1)` lub centroid przez
 
 ---
 
+## Budynki (WGLĄD: 2026-03-27)
+
+**Tabela:** `BUDYNKI`
+**Geometria:** polygon (SDO_GEOMETRY; punkt centroidu przez `SDO_CS.TRANSFORM(SHAPE,4326).SDO_POINT.X/Y`)
+**Liczba budynków w bbox:** 1663
+
+**Kolumny:**
+| Kolumna | Opis |
+|---------|------|
+| `ID_EGIB_BUDYNKU` | Identyfikator EGiB (`146505_8.0529.1094_BUD`) |
+| `FUN_UZYT_BUD` | Kategoria funkcji (np. `budynki mieszkalne`) |
+| `FUNKCJA_GLOWNA` | Szczegółowa funkcja główna |
+| `INNE_FUNKCJE` | Pozostałe funkcje |
+| `ROK_BUDOWY` | Rok budowy (często NULL) |
+| `POW_ZABUD` | Powierzchnia zabudowy (m²) |
+| `POW_UZYT_BUD_Z_OBMIAROW` | Powierzchnia użytkowa z obmiarów (m²) |
+| `LBA_KOND_NADZ` | Liczba kondygnacji nadziemnych |
+| `LBA_KOND_PODZ` | Liczba kondygnacji podziemnych |
+| `MAT_SCIAN_BUD` | Materiał ścian |
+| `RODZAJ_BUD_WG_PKOB` | Rodzaj budynku wg PKOB |
+| `STATUS_BUD` | Status (`1 - wybudowany`, itp.) |
+
+**Powiązanie z adresem:** tabela `EGIB_BUDYNKI_ADRESY` (klucz `BUDYNEK_ID` numeryczny)
+z kolumnami `ADRES`, `ULICA_ID`, `NAZWA`, `NUMER_PORZADKOWY`.
+
+---
+
+## Pozwolenia na budowę (WGLĄD: 2026-03-27)
+
+**Tabela:** `POZWOLENIA_BUD_POW`
+**Geometria:** polygon (SDO_GEOMETRY) + CLOB `GEOMETRY_JSON_WGS` (GeoJSON WGS84)
+**Liczba pozwoleń w bbox:** 103
+
+**Kolumny:**
+| Kolumna | Opis |
+|---------|------|
+| `ID_PB` | ID pozwolenia |
+| `DEC_PB` | Numer decyzji |
+| `DEC_WZ` | Powiązana decyzja WZ |
+| `DATA_PB` | Data wydania (VARCHAR2, format `YYYY-MM-DD HH:MI:SS`) |
+| `TYP_INW` | Typ inwestycji |
+| `NAZWA_INW` | Nazwa inwestycji |
+| `OPIS_RODZ_` | Rodzaj (Nowa / Modernizacja) |
+| `NAZWA_UL` | Ulica |
+| `NR_P` | Numer posesji |
+| `NAZWA_WN` | Inwestor |
+| `POW_TER` | Powierzchnia terenu (m²) |
+| `POW_ZAB` | Powierzchnia zabudowy (m²) |
+| `KOND` | Kondygnacje |
+| `WYSOKOSC` | Wysokość (m) |
+| `LICZBA_MIE` | Mieszkania |
+| `LICZBA_PAR` | Parkingi |
+| `GEOMETRY_JSON_WGS` | Geometria GeoJSON WGS84 (CLOB, `DBMS_LOB.SUBSTR(...,3500,1)`) |
+
+**Uwaga:** `DATA_PB` to VARCHAR2, nie DATE — nie używać `TO_CHAR`. Analogiczna struktura do `DECYZJE_WZ_POW`.
+
+---
+
+## Pomniki przyrody (WGLĄD: 2026-03-27)
+
+**Tabela:** `BOS_ZIELEN_POMNIKI_PRZYRODY`
+**Geometria:** punkt
+**Liczba w bbox:** 7
+
+**Kolumny:**
+| Kolumna | Opis |
+|---------|------|
+| `NR_REJ_WOJ` | Numer rejestru wojewódzkiego |
+| `NAZWA_PL` | Nazwa polska (gatunek lub opis) |
+| `NAZWA_LAC` | Nazwa łacińska |
+| `OBWOD` | Obwód (cm) |
+| `WYSOKOSC` | Wysokość (m) |
+| `DZIELNICA` | Dzielnica |
+| `DZIALKA` | Numer działki (lokalny, bez prefiksu EGiB) |
+| `OBIEKT` | Obiekt/lokalizacja |
+| `PODSTAWAPR` | Podstawa prawna |
+
+Przykłady w bbox: wiąz polny (289 cm obwód, 25 m), lipa drobnolistna (331 cm, 25 m),
+dąb szypułkowy (297 cm, 24 m), buk pospolity (335 cm, 21 m), gnejs (kamień).
+
+---
+
+## Współwłasność działek — tabela uzupełniająca
+
+**Tabela:** `WLASNOSC_DZIALKI_INNY_PODMIOT`
+**Klucz:** `ID_EGIB_DZIALKI`
+
+Lepsza od `WLASNOSC_DZIALKI_MIASTO` do identyfikacji współwłasności — podaje konkretną nazwę
+współwłaściciela zamiast ogólnego „OSOBA FIZYCZNA":
+
+| Kolumna | Opis |
+|---------|------|
+| `MOJ_PODMIOT` | Podmiot publiczny (np. `MIASTO STOŁECZNE WARSZAWA`) |
+| `MOJ_RODZAJ` | Rola publiczna (WŁAŚCICIEL / UŻYTKOWNIK) |
+| `OBCY_PODMIOT` | Inny podmiot (np. `MOSTOSTAL-EXPORT DEVELOPMENT SP. A.`) |
+| `OBCY_RODZAJ` | Rola innego podmiotu |
+
+---
+
+## Adresy budynków i działek
+
+- **`EMUIA_PUNKTY_ADRESOWE`** — oficjalny rejestr EMUiA: `NAZWA_ULICY`, `NUMER_PORZADKOWY`,
+  `KOD_POCZTOWY`, `ID_IIP`. Geometria: punkt.
+- **`PUNKTY_ADRESOWE`** — uproszczone: `ULICA`, `NUMER`, `DZIELNICA`.
+- **`EGIB_BUDYNKI_ADRESY`** — łączy `BUDYNEK_ID` (numeryczny) z adresem.
+- **`EGIB_DZIALKI_ADRESY`** — łączy `DZIALKA_ID` (numeryczny) z ulicą i numerem porządkowym.
+
+---
+
+## Schemat bazy MAPA — rozmiar
+
+`SELECT table_name FROM ALL_TABLES WHERE OWNER='MAPA'` zwraca **2540 tabel**.
+
+Niedziałające przez `info_request` (MAPVIEWER-00083): zapytania z `<` lub `>` w SQL
+(np. `ROWNUM <= 5`) — XML traktuje `<` jako znacznik. Używać `ROWNUM = 1` lub `FETCH FIRST N ROWS ONLY`.
+
+---
+
 ## Inne interesujące tematy
 
-- `BOS_ZIELEN_POMNIKI` — pomniki przyrody
-- `BOS_ZIELEN_ZASIEG_KORON` / `ZASIEGI_KORON_DRZEW` — zasięgi koron
-- `BOS_ZIELEN_NASADZENIE_*` — nasadzenia zastępcze
-- `BOS_ZIELEN_WYCINKA_ALL` — wycinka
-- `BUDYNKI_*` — budynki wg epoki (przed 1800, 1800–1849, …, po 1999)
+- `BOS_ZIELEN_ZASIEG_KORON` / `ZASIEGI_KORON_DRZEW` — zasięgi koron drzew (poligony)
+- `BOS_ZIELEN_KRZEWY` — krzewy (ten sam schemat co drzewa)
+- `BOS_ZIELEN_TRAWNIKI` — trawniki (NUMER_INW, STAN_ZACHOWANIA, SHAPE)
 - `ZABYTKI_OBIEKTY`, `ZABYTKI_OBSZARY` — rejestr zabytków
-- `ADAPTCITY_*` — dane klimatyczne (temperatura, opady, NDVI, nieprzepuszczalność)
+- `ADAPTCITY_*` / `AC_*` — dane klimatyczne (temperatura, opady, NDVI, nieprzepuszczalność)
 - `I_MILION_DRZEW_*` — program Milion Drzew wg roku
 - `GESTOSC_ZALUDNIENIA_DZIEL_*` — gęstość zaludnienia wg dzielnicy
+- `STUDIUM_STR_UZYTKOWANIE_2020_01` — przeznaczenie terenu wg Studium (SRID nieznany, zapytanie nie działa)
+- `REJESTR_DECYZJI` — decyzje podziałów nieruchomości (OBREB, NR_DECYZJI, DATA_WYDANIA)
