@@ -108,20 +108,12 @@ AND OPIS_PODMIOTU IN ('{owner_miejska}', '{owner_skarbu}')
 AND ({like_clause})
 </info_request>"""
 
-_COOWNED_TMPL = """\
+_COOWNER_TMPL = """\
 <?xml version="1.0" standalone="yes"?>
 <info_request datasource="dane_wawa" format="strict">
-SELECT DISTINCT a.ID_EGIB_DZIALKI
-FROM WLASNOSC_DZIALKI_MIASTO a
-WHERE a.RODZAJ_WLS_WLD='W\u0141A\u015aCICIEL'
-AND a.OPIS_PODMIOTU IN ('{owner_miejska}', '{owner_skarbu}')
-AND EXISTS (
-  SELECT 1 FROM WLASNOSC_DZIALKI_MIASTO b
-  WHERE b.IDDZIALKI = a.IDDZIALKI
-  AND b.RODZAJ_WLS_WLD='W\u0141A\u015aCICIEL'
-  AND b.OPIS_PODMIOTU NOT IN ('{owner_miejska}', '{owner_skarbu}')
-)
-AND ({like_clause})
+SELECT ID_EGIB_DZIALKI, OBCY_PODMIOT, OBCY_RODZAJ
+FROM WLASNOSC_DZIALKI_INNY_PODMIOT
+WHERE ({like_clause})
 </info_request>"""
 
 
@@ -172,21 +164,20 @@ def _fetch_ownership_db(
     return result
 
 
-def _fetch_coowned_parcels(
+def _fetch_coowner_data(
     session: requests.Session, prefixes: list[str]
-) -> set[str]:
+) -> dict[str, str]:
     """
-    Zwraca zbiór ID_EGIB_DZIALKI dla działek będących we współwłasności
-    publiczno-prywatnej (mają właściciela publicznego ORAZ innego).
+    Zwraca słownik {ID_EGIB_DZIALKI: OBCY_PODMIOT} dla działek będących
+    we współwłasności publiczno-prywatnej.
+    Używa tabeli WLASNOSC_DZIALKI_INNY_PODMIOT, która zawiera konkretne
+    nazwy współwłaścicieli zamiast ogólnego "OSOBA FIZYCZNA".
+    Jeśli działka ma wielu współwłaścicieli, łączy ich " / ".
     """
     like_clause = " OR ".join(
-        f"a.ID_EGIB_DZIALKI LIKE '{p}.%'" for p in sorted(prefixes)
+        f"ID_EGIB_DZIALKI LIKE '{p}.%'" for p in sorted(prefixes)
     )
-    xml = _COOWNED_TMPL.format(
-        owner_miejska=_OWNER_MIEJSKA,
-        owner_skarbu=_OWNER_SKARBU_PANSTWA,
-        like_clause=like_clause,
-    )
+    xml = _COOWNER_TMPL.format(like_clause=like_clause)
     r = session.post(
         f"{OM_BASE}/mapviewer/omserver",
         data={"xml_request": xml},
@@ -196,12 +187,21 @@ def _fetch_coowned_parcels(
     text = re.sub(r'&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[\da-fA-F]+);)', '&amp;', r.text)
     root = ET.fromstring(text)
     if root.tag == "oms_error":
-        log.warning("  Błąd zapytania współwłasności: %s", root.text)
-        return set()
-    return {
-        el.text for row in root.findall("ROW")
-        if (el := row.find("ID_EGIB_DZIALKI")) is not None and el.text
-    }
+        log.warning("  Błąd zapytania WLASNOSC_DZIALKI_INNY_PODMIOT: %s", root.text)
+        return {}
+
+    by_fid: dict[str, list[str]] = {}
+    for row in root.findall("ROW"):
+        fid_el  = row.find("ID_EGIB_DZIALKI")
+        obcy_el = row.find("OBCY_PODMIOT")
+        if fid_el is None or not fid_el.text:
+            continue
+        fid  = fid_el.text.strip()
+        obcy = obcy_el.text.strip() if obcy_el is not None and obcy_el.text else None
+        if obcy:
+            by_fid.setdefault(fid, []).append(obcy)
+
+    return {fid: " / ".join(owners) for fid, owners in by_fid.items()}
 
 
 def try_ownership(
@@ -222,14 +222,15 @@ def try_ownership(
     db_ownership = _fetch_ownership_db(session, prefixes)
     log.info("  Baza zwróciła %d wpisów publicznych dla prefiksów %s.", len(db_ownership), prefixes)
 
-    coowned = _fetch_coowned_parcels(session, prefixes)
-    log.info("  Współwłasność publiczno-prywatna: %d działek.", len(coowned))
+    coowner_data = _fetch_coowner_data(session, prefixes)
+    log.info("  Współwłasność publiczno-prywatna: %d działek.", len(coowner_data))
 
     result: dict[str, dict] = {}
     for fid in features:
         entry: dict = {"grupaRejestrowa": db_ownership.get(fid, "prywatna")}
-        if fid in coowned:
+        if fid in coowner_data:
             entry["wspolna"] = True
+            entry["wspolna_podmiot"] = coowner_data[fid]
         result[fid] = entry
 
     miejska  = sum(1 for v in result.values() if v["grupaRejestrowa"] == "miejska")

@@ -46,8 +46,9 @@ const wlasnoscOverlay = createGeoJSONOverlay({
           return `<tr><th style="text-align:left;padding-right:8px;">Własność</th><td>${labels[v] ?? v}</td></tr>`;
         }
       },
-      wspolna: {
-        render: (k, v) => v ? `<tr><th style="text-align:left;padding-right:8px;">Współwłasność</th><td>publiczna + prywatna</td></tr>` : '',
+      wspolna: { exclude: true },
+      wspolna_podmiot: {
+        render: (k, v) => `<tr><th style="text-align:left;padding-right:8px;">Współwłasność</th><td>${v}</td></tr>`,
       },
     }
   }
