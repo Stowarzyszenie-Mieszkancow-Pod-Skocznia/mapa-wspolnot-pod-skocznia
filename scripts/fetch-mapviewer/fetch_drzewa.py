@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 
 OM_BASE      = "https://mapa.um.warszawa.pl"
-DEFAULT_BBOX = "21.019,52.171,21.052,52.197"
+DEFAULT_BBOX = "21.0214376449585,52.174166602946094,21.047401428222656,52.19216606894107"
 DEFAULT_OUT  = Path(__file__).parent.parent.parent / "layers/overlays/data/drzewaGeoJSON.js"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")

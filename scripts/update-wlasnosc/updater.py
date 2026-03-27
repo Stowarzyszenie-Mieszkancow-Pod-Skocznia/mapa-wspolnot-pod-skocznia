@@ -34,7 +34,7 @@ import requests
 
 WFS_URL      = "https://wms2.um.warszawa.pl/geoserver/wfs/wfs"
 OM_BASE      = "https://mapa.um.warszawa.pl"
-DEFAULT_BBOX = "21.019,52.171,21.052,52.197"   # MAX_BOUNDS z mapConfig.js
+DEFAULT_BBOX = "21.0214376449585,52.174166602946094,21.047401428222656,52.19216606894107"
 # Serwer odrzuca startIndex > 0 (HTTP 400), ale obsługuje duże count.
 MAX_COUNT    = 5000
 
