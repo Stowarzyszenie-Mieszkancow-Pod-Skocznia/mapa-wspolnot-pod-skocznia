@@ -8,7 +8,7 @@ Kroki:
      – MIASTO STOŁECZNE WARSZAWA  → miejska
      – SKARB PAŃSTWA              → skarbu_panstwa
      – pozostałe                  → prywatna
-  3. Scalenie z istniejącymi plikami – ręcznie wpisane wpisy NIE są nadpisywane
+  3. Scalenie z istniejącymi plikami – dane z bazy nadpisują istniejące wpisy
 
 Użycie:
   python updater.py [--bbox "minLng,minLat,maxLng,maxLat"] [--dry-run]
@@ -340,9 +340,7 @@ _DATA_HEADER = """\
 //   "prywatna"       – Własność prywatna / inne
 // Flaga wspolna: true – współwłasność publiczno-prywatna (podmiot publiczny + inna osoba)
 //
-// Źródło: WLASNOSC_DZIALKI_MIASTO (Oracle MapViewer, dane_wawa)
-// Jak uzupełnić: odszukaj działkę na https://mapa.um.warszawa.pl/mapaApp1/mapa?service=mapa_wlasnosci
-//                sprawdź kolor i wpisz tutaj.
+// Źródło: WLASNOSC_DZIALKI_MIASTO (Oracle MapViewer, dane_wawa) – dane autorytatywne, nie edytować ręcznie.
 
 const wlasnoscData = {"""
 
@@ -443,23 +441,12 @@ def main() -> None:
     ownership = try_ownership(session, new_by_id)
 
     existing_data = read_data_js(data_path)
-    new_data      = dict(existing_data)   # zacznij od istniejących danych
-    auto_added    = 0
-    for fid, entry in ownership.items():
-        if fid not in existing_data:        # nigdy nie nadpisuj ręcznych wpisów grupaRejestrowa
-            new_data[fid] = entry
-            auto_added += 1
-        else:
-            # Zachowaj ręczną grupaRejestrowa, ale zawsze odświeżaj flagę wspolna
-            updated = dict(existing_data[fid])
-            if entry.get("wspolna"):
-                updated["wspolna"] = True
-            else:
-                updated.pop("wspolna", None)
-            new_data[fid] = updated
+    # Zachowaj wpisy spoza aktualnego bbox; nadpisz wszystko w zasięgu zapytania
+    new_data = {fid: v for fid, v in existing_data.items() if fid not in ownership}
+    new_data.update(ownership)
     log.info(
-        "  wlasnoscData: %d nowych auto + %d zaktualizowanych + %d tylko ręcznych = %d łącznie",
-        auto_added, len(existing_data), len(existing_data) - len(new_data) + auto_added, len(new_data),
+        "  wlasnoscData: %d w bbox (nadpisane) + %d poza bbox (zachowane) = %d łącznie",
+        len(ownership), len(new_data) - len(ownership), len(new_data),
     )
 
     # ── 3. Zapis ───────────────────────────────────────────────────────────────
