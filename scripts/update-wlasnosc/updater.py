@@ -8,7 +8,7 @@ Kroki:
      – MIASTO STOŁECZNE WARSZAWA  → miejska
      – SKARB PAŃSTWA              → skarbu_panstwa
      – pozostałe                  → prywatna
-  3. Scalenie z istniejącymi plikami – dane z bazy nadpisują istniejące wpisy
+  3. Zapis wyników – dane z bazy zastępują pliki w całości
 
 Użycie:
   python updater.py [--bbox "minLng,minLat,maxLng,maxLat"] [--dry-run]
@@ -243,69 +243,7 @@ def try_ownership(
     return result
 
 
-# ── Parsowanie i zapis plików JS ──────────────────────────────────────────────
-
-def _extract_js_object(text: str, var_name: str) -> str:
-    """Wyodrębnia JSON-obiekt przypisany do zmiennej JS metodą liczenia nawiasów."""
-    prefix = f"const {var_name} ="
-    idx = text.find(prefix)
-    if idx < 0:
-        return ""
-    try:
-        start = text.index("{", idx + len(prefix))
-    except ValueError:
-        return ""
-
-    depth, i = 0, start
-    in_str, esc = False, False
-    while i < len(text):
-        c = text[i]
-        if esc:
-            esc = False
-        elif c == "\\" and in_str:
-            esc = True
-        elif c == '"':
-            in_str = not in_str
-        elif not in_str:
-            if c == "{":
-                depth += 1
-            elif c == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start:i + 1]
-        i += 1
-    return ""
-
-
-def read_geojson_js(path: Path) -> dict:
-    empty = {"type": "FeatureCollection", "name": "wlasnosc", "features": []}
-    if not path.exists():
-        return empty
-    text = path.read_text("utf-8")
-    json_str = _extract_js_object(text, "wlasnoscGeoJSON")
-    if json_str:
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError as e:
-            log.warning("Nie udało się sparsować %s: %s", path.name, e)
-    return empty
-
-
-def read_data_js(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    text = path.read_text("utf-8")
-    # Usuń komentarze JS
-    no_comments = re.sub(r"//[^\n]*", "", text)
-    json_str = _extract_js_object(no_comments, "wlasnoscData")
-    if json_str:
-        # Usuń trailing commas (dozwolone w JS, niedozwolone w JSON)
-        clean = re.sub(r",(\s*[}\]])", r"\1", json_str)
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError as e:
-            log.warning("Nie udało się sparsować %s: %s", path.name, e)
-    return {}
+# ── Zapis plików JS ───────────────────────────────────────────────────────────
 
 
 def _round_coords(coords, d: int = 7):
@@ -421,37 +359,16 @@ def main() -> None:
         for f in wfs_features
     }
 
-    # Scal z istniejącym GeoJSON – zachowaj działki spoza pobranego bbox
-    existing_geojson = read_geojson_js(geojson_path)
-    preserved = [
-        feat for feat in existing_geojson["features"]
-        if feat["properties"].get("fid") not in new_by_id
-    ]
-    merged = sorted(
-        preserved + list(new_by_id.values()),
-        key=lambda f: f["properties"]["fid"],
-    )
-    existing_geojson["features"] = merged
-    log.info(
-        "  GeoJSON: %d zaktualizowanych + %d zachowanych = %d łącznie",
-        len(new_by_id), len(preserved), len(merged),
-    )
+    features = sorted(new_by_id.values(), key=lambda f: f["properties"]["fid"])
+    geojson = {"type": "FeatureCollection", "name": "wlasnosc", "features": features}
+    log.info("  GeoJSON: %d działek", len(features))
 
     # ── 2. Własność ────────────────────────────────────────────────────────────
     ownership = try_ownership(session, new_by_id)
 
-    existing_data = read_data_js(data_path)
-    # Zachowaj wpisy spoza aktualnego bbox; nadpisz wszystko w zasięgu zapytania
-    new_data = {fid: v for fid, v in existing_data.items() if fid not in ownership}
-    new_data.update(ownership)
-    log.info(
-        "  wlasnoscData: %d w bbox (nadpisane) + %d poza bbox (zachowane) = %d łącznie",
-        len(ownership), len(new_data) - len(ownership), len(new_data),
-    )
-
     # ── 3. Zapis ───────────────────────────────────────────────────────────────
-    write_geojson_js(geojson_path, existing_geojson, args.dry_run)
-    write_data_js(data_path, new_data, args.dry_run)
+    write_geojson_js(geojson_path, geojson, args.dry_run)
+    write_data_js(data_path, ownership, args.dry_run)
     log.info("Gotowe.")
 
 
