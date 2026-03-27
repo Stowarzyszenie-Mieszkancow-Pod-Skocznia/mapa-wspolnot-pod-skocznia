@@ -166,13 +166,14 @@ def _fetch_ownership_db(
 
 def _fetch_coowner_data(
     session: requests.Session, prefixes: list[str]
-) -> dict[str, str]:
+) -> dict[str, list[str]]:
     """
     Zwraca słownik {ID_EGIB_DZIALKI: OBCY_PODMIOT} dla działek będących
     we współwłasności publiczno-prywatnej.
     Używa tabeli WLASNOSC_DZIALKI_INNY_PODMIOT, która zawiera konkretne
     nazwy współwłaścicieli zamiast ogólnego "OSOBA FIZYCZNA".
-    Jeśli działka ma wielu współwłaścicieli, łączy ich " / ".
+    Zwraca surową listę podmiotów — filtrowanie redundantnych wpisów odbywa się
+    w try_ownership(), gdzie znana jest klasyfikacja działki.
     """
     like_clause = " OR ".join(
         f"ID_EGIB_DZIALKI LIKE '{p}.%'" for p in sorted(prefixes)
@@ -190,8 +191,6 @@ def _fetch_coowner_data(
         log.warning("  Błąd zapytania WLASNOSC_DZIALKI_INNY_PODMIOT: %s", root.text)
         return {}
 
-    _PUBLIC = {_OWNER_MIEJSKA, _OWNER_SKARBU_PANSTWA}
-
     by_fid: dict[str, list[str]] = {}
     for row in root.findall("ROW"):
         fid_el  = row.find("ID_EGIB_DZIALKI")
@@ -200,10 +199,10 @@ def _fetch_coowner_data(
             continue
         fid  = fid_el.text.strip()
         obcy = obcy_el.text.strip() if obcy_el is not None and obcy_el.text else None
-        if obcy and obcy not in _PUBLIC:
+        if obcy:
             by_fid.setdefault(fid, []).append(obcy)
 
-    return {fid: " / ".join(owners) for fid, owners in by_fid.items()}
+    return by_fid
 
 
 def try_ownership(
@@ -225,14 +224,23 @@ def try_ownership(
     log.info("  Baza zwróciła %d wpisów publicznych dla prefiksów %s.", len(db_ownership), prefixes)
 
     coowner_data = _fetch_coowner_data(session, prefixes)
-    log.info("  Współwłasność publiczno-prywatna: %d działek.", len(coowner_data))
+
+    # Entity name for each public category — used to filter redundant co-owner entries
+    # (e.g. drop "SKARB PAŃSTWA" from co-owners of a parcel already classified skarbu_panstwa)
+    _primary_entity = {
+        "miejska":        _OWNER_MIEJSKA,
+        "skarbu_panstwa": _OWNER_SKARBU_PANSTWA,
+    }
 
     result: dict[str, dict] = {}
     for fid in features:
         entry: dict = {"grupaRejestrowa": db_ownership.get(fid, "prywatna")}
         if fid in coowner_data:
-            entry["wspolna"] = True
-            entry["wspolna_podmiot"] = coowner_data[fid]
+            same = _primary_entity.get(entry["grupaRejestrowa"])
+            others = [o for o in coowner_data[fid] if o != same]
+            if others:
+                entry["wspolna"] = True
+                entry["wspolna_podmiot"] = " / ".join(others)
         result[fid] = entry
 
     miejska  = sum(1 for v in result.values() if v["grupaRejestrowa"] == "miejska")
