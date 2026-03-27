@@ -132,6 +132,74 @@ WHERE SDO_FILTER(SHAPE, {bbox_geom}, 'querytype=WINDOW') = 'TRUE'"""
     return features
 
 
+def fetch_pomniki(session: requests.Session, bbox: str) -> list[dict]:
+    """
+    Pobiera pomniki przyrody będące drzewami (z nazwą łacińską).
+    Głazy i inne obiekty niebędące drzewami są pomijane.
+    """
+    minx, miny, maxx, maxy = bbox.split(",")
+    bbox_geom = (
+        f"SDO_GEOMETRY(2003,4326,NULL,SDO_ELEM_INFO_ARRAY(1,1003,3),"
+        f"SDO_ORDINATE_ARRAY({minx},{miny},{maxx},{maxy}))"
+    )
+    sql = f"""SELECT NR_REJ_WOJ, NAZWA_PL, NAZWA_LAC, OBWOD, OBIEKT, PODSTAWAPR,
+  SDO_CS.TRANSFORM(SHAPE,4326).SDO_POINT.X AS LNG,
+  SDO_CS.TRANSFORM(SHAPE,4326).SDO_POINT.Y AS LAT
+FROM BOS_ZIELEN_POMNIKI_PRZYRODY
+WHERE SDO_FILTER(SHAPE, {bbox_geom}, 'querytype=WINDOW') = 'TRUE'"""
+
+    log.info("Pobieranie pomników przyrody…")
+    rowset = info_request(session, sql)
+    pomniki = []
+    for row in rowset.findall("ROW"):
+        lng = _num(row, "LNG")
+        lat = _num(row, "LAT")
+        if lng is None or lat is None:
+            continue
+        if _text(row, "NAZWA_LAC") is None:  # głaz lub inny obiekt niebędący drzewem
+            continue
+        nr_rej = _num(row, "NR_REJ_WOJ")
+        pomniki.append({
+            "lng": lng, "lat": lat,
+            "nr_rej": int(nr_rej) if nr_rej else None,
+            "nazwa_pl": _text(row, "NAZWA_PL"),
+            "obiekt":   _text(row, "OBIEKT"),
+            "podstawa": _text(row, "PODSTAWAPR"),
+        })
+    log.info("  Pomniki przyrody (drzewa): %d", len(pomniki))
+    return pomniki
+
+
+def match_pomniki(features: list[dict], pomniki: list[dict],
+                  threshold_deg: float = 0.0007) -> list[dict]:
+    """
+    Dopasowuje pomniki przyrody do najbliższego drzewa w inwentarzu.
+    threshold_deg ≈ 20 m. Niezidentyfikowane pomniki są logowane jako ostrzeżenie.
+    """
+    threshold_sq = threshold_deg ** 2
+    for p in pomniki:
+        best_f, best_d = None, float("inf")
+        for f in features:
+            lng, lat = f["geometry"]["coordinates"]
+            d = (lng - p["lng"]) ** 2 + (lat - p["lat"]) ** 2
+            if d < best_d:
+                best_d, best_f = d, f
+        dist_m = (best_d ** 0.5) * 111_000
+        if best_f is not None and best_d < threshold_sq:
+            props = best_f["properties"]
+            if p["nr_rej"]:
+                props["pomnik_nr"] = p["nr_rej"]
+            props["pomnik_obiekt"] = p["obiekt"] or "drzewo"
+            if p["podstawa"]:
+                props["pomnik_podstawa"] = p["podstawa"]
+            log.info("  Pomnik nr %s (%s) → drzewo %s (%.0f m)",
+                     p["nr_rej"], p["nazwa_pl"], props.get("fid", "?"), dist_m)
+        else:
+            log.warning("  Brak dopasowania dla pomnika nr %s (%s) – %.0f m od najbliższego drzewa",
+                        p["nr_rej"], p["nazwa_pl"], dist_m)
+    return features
+
+
 def write_js(path: Path, features: list[dict], dry_run: bool) -> None:
     lines = [
         "const drzewaGeoJSON = {",
@@ -164,6 +232,8 @@ def main():
     session.headers["User-Agent"] = "fetch-drzewa/1.0 (mapaPodSkocznia)"
 
     features = fetch_trees(session, args.bbox)
+    pomniki = fetch_pomniki(session, args.bbox)
+    match_pomniki(features, pomniki)
     write_js(Path(args.out), features, args.dry_run)
     log.info("Gotowe.")
 

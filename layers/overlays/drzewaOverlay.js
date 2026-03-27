@@ -18,17 +18,20 @@ const drzewaOverlay = L.geoJSON(drzewaGeoJSON, {
   renderer,
   pointToLayer(feature, latlng) {
     const color = getDrzewoColor(feature.properties.stan_zdrowotny);
+    const isPomnik = !!feature.properties.pomnik_nr || !!feature.properties.pomnik_obiekt;
     return L.circleMarker(latlng, {
-      radius: 3,
-      color,
-      fillColor: color,
+      radius:      isPomnik ? 6 : 3,
+      color:       isPomnik ? '#b8860b' : color,
+      weight:      isPomnik ? 2 : 0,
+      fillColor:   color,
       fillOpacity: 0.8,
-      weight: 0,
     });
   },
   onEachFeature(feature, layer) {
     const p = feature.properties;
     const rows = [
+      p.pomnik_nr     && `<tr><th>Pomnik przyrody</th><td>Nr rej. woj. ${p.pomnik_nr}</td></tr>`,
+      !p.pomnik_nr && p.pomnik_obiekt && `<tr><th>Pomnik przyrody</th><td>${p.pomnik_obiekt}</td></tr>`,
       p.gatunek_pl    && `<tr><th>Gatunek</th><td>${p.gatunek_pl}</td></tr>`,
       p.gatunek_lat   && `<tr><th>Nazwa łac.</th><td><em>${p.gatunek_lat}</em></td></tr>`,
       p.stan_zdrowotny && `<tr><th>Stan zdrowotny</th><td>${p.stan_zdrowotny}</td></tr>`,
@@ -56,6 +59,7 @@ const drzewaLegend = L.control.Legend({
     { type: 'circle', radius: 5, color: '#c14f00', fillColor: '#c14f00', fillOpacity: 0.8, weight: 0, label: 'Zły' },
     { type: 'circle', radius: 5, color: '#8b0000', fillColor: '#8b0000', fillOpacity: 0.8, weight: 0, label: 'Obumarły' },
     { type: 'circle', radius: 5, color: '#888888', fillColor: '#888888', fillOpacity: 0.8, weight: 0, label: 'Brak danych' },
+    { type: 'circle', radius: 8, color: '#b8860b', fillColor: '#888888', fillOpacity: 0.8, weight: 2, label: 'Pomnik przyrody' },
   ],
 });
 
